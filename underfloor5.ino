@@ -57,10 +57,8 @@
 #include <WiFiNINA.h>   // on-board wifi
 #include <WiFiUdp.h>
 #include <RTCZero.h>    // clock
-#include "Adafruit_GFX.h"       // Graphics https://github.com/adafruit/Adafruit-GFX-Library
-#include "Adafruit_ILI9341.h"   // Screen https://github.com/adafruit/Adafruit_ILI9341/
-#include "XPT2046_Touchscreen.h"
-#include <Fonts/FreeSansBold9pt7b.h>
+#include "logger.h"
+#include "screen.h"
 #include <Arduino_MKRENV.h> // https://docs.arduino.cc/hardware/mkr-env-shield 
 #include <Sodaq_wdt.h>  // watchdog
 #include <utility/wifi_drv.h> // for indicator lamp WiFiDrv
@@ -82,7 +80,7 @@ float insolationFactor = 0.4; // varies minsPerDegreePerHour from 0.4 to 1.2, wi
 float minimumBurst = 10.0; // minutes
 float startupTime = 3.0; // minutes before heating actually starts
 unsigned long backlightTimeout = 120 * 1000L; // ms
-int backlightSensitivity = 5; // 3..20
+int backlightSensitivity = 12; // 3..20
 unsigned long connectFailRebootTimeout = 2 * 60 * 60 * 1000L; // 2 hours
 float hourlyWeights[24] =
 { 0, 0, 0, 0, 0, 0,
@@ -93,141 +91,23 @@ float hourlyWeights[24] =
 float cosMonth[12] = {1.0, 0.7, 0.25, -0.2, -0.7, -1.0, -1.0, -0.7, -0.2, 0.25, 0.7, 1.0};
 
 
-unsigned long maxLogSize = 1000000;
-
 #define WIFI_SSID_COUNT 2
 String wifiSSID[] = {"Pant-y-Wylan", "Pant-2-Wylan"};
 int wifiSelected = 0;
 
 
 
-/*__Pin definitions for the TFT display */
-#define TFT_CS   A3
-#define TFT_DC   0
-#define TFT_MOSI 8
-//#define TFT_RST  22
-#define TFT_CLK  9
-#define TFT_MISO 10
-#define BACKLIGHT  A2
 #define LDR_PIN A5
 
-#define TOUCH_CS A4
-#define TOUCH_IRQ 1
 
 #define THERMISTOR A6
 
-#define BEEPER 2
 #define HEAT_PIN 7  // Heating power relay
 
-// SD card
-#define SD_CS   4 //   SDCARD_SS_PIN   // SD card chip select pin
-#define FILE_REWRITE (O_WRITE | O_CREAT | O_TRUNC)
 
-
-/*____ Touchscreen parameters_____*/
-#define MINPRESSURE 5      // minimum required force for touch event
-#define TS_MINX 370
-#define TS_MINY 470
-#define TS_MAXX 3700
-#define TS_MAXY 3600
-/*___________________________*/
 
 // Onboard clock
 RTCZero rtc;
-
-Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
-class PageController {
-  public:
-    virtual void setTimeout(long ms);
-    virtual void switchToControlPage();
-    virtual void switchToMainPage();
-};
-class Page {
-  protected:
-    PageController *screen;
-    void drawNumberButton(float num, int y, unsigned int bg, unsigned int fg);
-  public:
-    //virtual void activateButtons();
-    virtual void handleTouch(TS_Point touch) ;
-    virtual void handleLeavingPage() ;
-    virtual void redraw() ;  // redraw from scratch
-    virtual void refresh() ; // update just the changeable bits
-};
-class MainPage : public Page {
-    void drawTemperature();
-    void drawSunMoon(int left, int base, int dx);
-    void drawTides(int left, int base, int dx);
-    void drawHeatingPlan();
-  public:
-    MainPage(PageController *s) {
-      screen = s;
-    }
-    void handleTouch(TS_Point touch) ;
-    void handleLeavingPage() ;
-    void redraw() ;
-    void refresh();
-};
-class ControlPage : public Page {
-  public:
-    ControlPage(PageController *s) {
-      screen = s;
-    }
-    void handleTouch(TS_Point touch) ;
-    void handleLeavingPage() ;
-    void redraw() ;
-    void refresh();
-};
-class StartupPage : public Page {
-  public:
-    StartupPage(PageController *s) {
-      screen = s;
-    }
-    void handleTouch(TS_Point touch) {}
-    void handleLeavingPage() {}
-    void redraw() ;
-    void refresh() {}
-};
-class Screen : PageController {
-    XPT2046_Touchscreen touchScreen;
-    long screenTimeout = 0;       // revert to main screen after millis
-    unsigned lastTouch = 0;
-    ControlPage *controlPage = new ControlPage(this);
-    MainPage *mainPage = new MainPage(this);
-    StartupPage *startupPage = new StartupPage(this);
-    Page *currentPage = NULL;
-    bool IsTouched(TS_Point &p);
-    void switchPage(Page *toPage) {
-      if (toPage == currentPage) return;
-      if (currentPage != NULL) currentPage->handleLeavingPage();
-      currentPage = toPage;
-      redraw();
-    }
-  public:
-    Screen() : touchScreen(TOUCH_CS) {}
-    void start() {
-      tft.begin();
-      touchScreen.begin();
-      switchPage(startupPage);
-    }
-    void loop();
-    void setTimeout(long ms) {
-      if (ms == 0) screenTimeout = 0;
-      else screenTimeout = millis() + ms;
-    }
-    void switchToMainPage() {
-      switchPage(mainPage);
-    }
-    void switchToControlPage() {
-      switchPage(controlPage);
-    }
-    void redraw() {
-      currentPage->redraw();
-    }
-    void refresh() {
-      currentPage->refresh();
-    }
-};
-
 
 
 Screen screen;
@@ -366,28 +246,6 @@ void loop() {
   sodaq_wdt_reset(); // watchdog
   // The watchdog resets the board if we don't reset it
   // within its timeout period. Guards against hang-ups.
-}
-
-
-bool Screen::IsTouched(TS_Point &p) {
-  // Crude debounce:
-  unsigned nowMillis = millis();
-  if (nowMillis - lastTouch < 500) return false;
-  lastTouch = nowMillis;
-
-  p = touchScreen.getPoint();
-  delay(1);
-
-  p.x = map(p.x, TS_MINX, TS_MAXX, 320, 0);
-  p.y = map(p.y, TS_MINY, TS_MAXY, 240, 0);
-
-  if (p.z < MINPRESSURE) p.z = 0;
-  else {
-    clogn(String("x ") + p.x + " y " + p.y);
-    tone(BEEPER, 1000, 500);
-    return true;
-  }
-  return false;
 }
 
 
@@ -1465,28 +1323,9 @@ bool parseWeather(String& msg)
   return gotLines;
 }
 
-String TwoDigits(String n)
-{
-  String r = "";
-  if (n.length() < 2) r = " ";
-  r += n;
-  return r;
-}
 
-String d2(int n)
-{
-  String r = "";
-  if (n < 10) r = "0";
-  r += n;
-  return r;
-}
 
-String ThreeChars(String n)
-{
-  String r = n;
-  while (r.length() < 3) r += " ";
-  return r;
-}
+
 
 String getProp (String &msg, String prop, int msgix, int endSegmentIx)
 {
@@ -1821,227 +1660,11 @@ bool isSummertime () {
   if (month == 10) return day < (31 - (((5 * year / 4) + 1) % 7));
 }
 
-/*
-   Logging
-
-*/
-
-String timeString () {
-  return
-    String("") + rtc.getYear() + "-" + d2(rtc.getMonth()) + "-" + d2(rtc.getDay())
-    + " " + d2(rtc.getHours()) + ":" + d2(rtc.getMinutes()) + ":" + d2(rtc.getSeconds()) + " ";
-}
-
-void clog (String msg)
-{
-  dclogn(msg, false);
-}
-void dlogn(String msg) {
-  dclogn(msg + "\n", true);
-}
-void clogn(String msg) {
-  dclogn(msg + "\n", false);
-}
-bool endedLogLine = true;
-void dclogn(String msg, bool fileLog)
-{
-  if (msg.length() == 0) return;
-  String msgOut = endedLogLine ? timeString() + " " + msg : msg;
-  if (logging)Serial.print(msgOut);
-  if (fileLog) rlog(msgOut, "LOG.TXT");
-  rlog(msgOut, "RECENT.TXT");
-  endedLogLine = msgOut.charAt(msgOut.length() - 1) == '\n';
-}
-
-void rlog (String msg, const char* fileName) {
-  File ff = SD.open(fileName, FILE_WRITE);
-  if (ff) {
-    ff.print(msg);
-    ff.close();
-  }
-}
-
-
-void transferRecentLog() {
-  copyFile("RECENT.TXT", "LOG.TXT", false);
-}
-
-void clearRecentLog () {
-  clearFile("RECENT.TXT");
-}
-
-void truncateLog(const String& logfile) {
-  File fi = SD.open(logfile, FILE_READ);
-  if (fi) {
-    long excessLength = fi.size() - maxLogSize;
-    if (excessLength > 0) {
-      fi.seek(excessLength);
-      copyFile(fi, "OLDLOG.TXT", true);
-      copyFile("OLDLOG.TXT", logfile, true);
-      SD.remove("OLDLOG.TXT");
-    } else {
-      fi.close();
-    }
-  }
-}
-
-void copyFile(String fromFile, String toFile, bool overWrite) {
-  File fi = SD.open(fromFile, FILE_READ);
-  copyFile(fi, toFile, overWrite);
-}
-
-void copyFile(File fi, String toFile, bool overWrite) {
-  int buffersize = 3000;
-  char buf[buffersize];
-  File fo = SD.open(toFile, overWrite ? FILE_REWRITE : FILE_WRITE);
-  if (fi && fo) {
-    while (fi.available()) {
-      int count = fi.read(buf, buffersize);
-      if (count == 0) break;
-      fo.write(buf, count);
-    }
-  }
-  if (fi) fi.close();
-  if (fo) fo.close();
-}
-
-void clearFile(String fileName) {
-  File f = SD.open(fileName, FILE_REWRITE);
-  if (f) {
-    f.close();
-  }
-}
-
-
-
-
-
-/*
-   Screen
-*/
-
-const unsigned int bgcolor = 8;
-const int leftAxis = 30;
-const int dayWidth = 42;
-const int zeroAxis = 90;
-const int barWidth = 8;
-
-
-
-void Page::drawNumberButton(float num, int y, unsigned int bg, unsigned int fg)
-{
-  tft.fillRoundRect(240, y, 80, 60, 4, bg);
-  tft.setTextSize(2);
-  tft.setTextColor(fg);
-  tft.setFont(&FreeSansBold9pt7b);
-  float t = round(10 * num) / 10.0 + 0.00001;
-  show (245, y + 40, (String("") + t).substring(0, 4));
-  tft.setFont(NULL);
-}
-
-void MainPage::drawHeatingPlan()
-{
-  const int left = 12, base = 188, dx = 9;
-  unsigned int color = 66757;
-  tft.fillRect(left, 128, 240 - left, base - 128, bgcolor);
-  if (serviceOff || serviceOn != 0) {
-    tft.setTextColor(31 << 11 | 63 << 5 | 31);
-    show(14, 140, serviceOff ? String("SERVICE OFF") : String("SERVICE ON ") + (serviceOn - millis()) / 60000);
-    return;
-  }
-
-  drawSunMoon(left, base, dx);
-
-  // Graph of minutes in each hour:
-  int x = left;
-  for (int i = 0; i < 24; i++) {
-    int h = period[i];
-    tft.fillRect(x, base - h, dx - 1, h + 2, color);
-    x += dx;
-  }
-  // 10-minute graduations:
-  for (int m = 0; m < 60; m += 10) {
-    tft.drawFastHLine(left, base - m, 240 - left, bgcolor);
-  }
-  // x-axis hour labels:
-  for (int h = 0; h < 24 ; h += 6) {
-    tft.setTextSize(2);
-    tft.setTextColor(color);
-    show (left + h * dx, 192, String(h));
-  }
-  // current time:
-  tft.drawFastVLine((int)((rtc.getHours() + rtc.getMinutes() / 60.0)*dx) + left, 128, 60, TIDE_COLOR);
-
-  if (lowUntilDate.length() > 0) {
-    tft.setTextColor(31 << 11);
-    show(left + 10, 140, "Vacation to");
-    show(left + 10, 160, lowUntilDate);
-  }
-
-  drawTides(left, base, dx);
-}
-
-void MainPage::drawSunMoon(int left, int base, int dx) {
-  const unsigned int dayColor = 20 << 11 | 32 << 5 | 8;
-  const unsigned int moonColor = 8 << 11 | 16 << 5 | 8;
-  //clogn(String ("Sun ") + sunRise + ".." + sunSet + " Moon " + moonRise + ".." + moonSet);
-  if (sunRise < 1.0 || sunRise > 10.0 || sunSet < 15.0 || sunSet > 23.0) return;
-  if (moonRise > 0 || moonSet > 0) {
-    if (moonRise < moonSet) {
-      tft.fillRect((int)(left + moonRise * dx), 128, (int)((moonSet - moonRise)*dx), base - 128, moonColor);
-    } else {
-      tft.fillRect((int)(left + moonRise * dx), 128, (int)((24 - moonRise)*dx), base - 128, moonColor);
-      tft.fillRect(left, 128, (int)(moonSet * dx), base - 128, moonColor);
-    }
-  }
-  tft.fillRect((int)(left + sunRise * dx), 128, (int)((sunSet - sunRise)*dx), base - 128, dayColor);
-}
-
-void MainPage::drawTides(int left, int base, int dx)
-{
-  int top = 0, bottom = 0, x0 = 0, y0 = 0;
-  for (int i = 0; i < 4; i++)
-  {
-    Tide &t = tides[i];
-    if (t.eventType.length() == 0) break;
-    int x = left + t.tod * dx;
-    int y = base - t.height * (base - 128) / 10;
-    if (x0 == 0) {
-      x0 = x - left;
-      y0 = y;
-    }
-    //clogn(String("drawTide ") + x + ", " + y);
-    tft.drawFastHLine(x - 4, y, 8, TIDE_COLOR);
-    tft.drawFastVLine(x, y - (t.eventType[0] == '1' ? 8 : 0), 8, TIDE_COLOR);
-    if (t.eventType[0] == '1') bottom = y;
-    else top = y;
-  }
-  if (y0 > 0) {
-    // Draw a sine wave through the low and high tides.
-    // Start at the latest high or low, then wrap around.
-    const float tidalPeriod = 12.42; // hours
-    const float periodInPixels = dx * tidalPeriod; // about 112
-    const float ddy = 2 * 3.14159 / periodInPixels; // about 0.0562
-    float mid = (bottom + top) / 2;
-    float yh = y0 - mid, yv = 0; // height, velocity
-    int width = dx * 24;
-    for (int t = 0; t < width; t++) {
-      tft.drawPixel((t + x0) % width + left, int(yh + mid), TIDE_COLOR);
-      yv -= yh * ddy; yh += yv * ddy;
-    }
-  }
-}
 
 void drawStatus () {
   showStatus(timeString().substring(0, 14) + "  " + (isHeatingOn ? "ON" : "OFF"));
 }
 
-void showStatus(String s) {
-  tft.fillRect(0, 220, 240, 20, 0xFFFF);
-  tft.setTextSize(2);
-  tft.setTextColor(16);
-  show (4, 222, s);
-}
 
 void showIP() {
   showStatus(ipString("") + " " + (isHeatingOn ? "ON" : "OFF"));
@@ -2129,118 +1752,9 @@ void drawTempGraphBg(int firstDay)
   }
 }
 
-void show(int x, int y, String text)
-{
-  tft.setCursor(x, y);
-  tft.print(text);
-}
-
-void backlightOn(bool on) {
-  digitalWrite(BACKLIGHT, on ? LOW : HIGH);
-}
-
-/// Draw vertical gradient across width of screen. 5-6-5 color: r:{0..31},g:{0..63},b:{0..31}
-void vgrade(float rFrom, float gFrom, float bFrom, float rTo, float gTo, float bTo, int yFrom, int yTo)
-{
-  int h = yTo - yFrom;
-  float r = rFrom, g = gFrom, b = bFrom;
-  float dr = (rTo - rFrom) / h, dg = (gTo - gFrom) / h, db = (bTo - bFrom) / h;
-
-  for (int y = yFrom; y < yTo; y++) {
-    unsigned int color = int(r) << 11 | int(g) << 5 | int(b);
-    tft.drawFastHLine(0, y, tft.width(), color);
-    r += dr; g += dg; b += db;
-  }
-}
-
-
 /***** Screen **************/
 
-    void Screen::loop() {
-      TS_Point touchPoint;
-      if (IsTouched(/*out*/touchPoint)) {
-        backlightOn(true);
-        currentPage->handleTouch(touchPoint);
-      }
-      if (screenTimeout > 0 && millis() > screenTimeout) {
-        screenTimeout = 0;
-        switchPage(mainPage);
-      }
-    }
 
-
-/***** MainPage ****/
-
-void MainPage::handleTouch(TS_Point touch) {
-  if (touch.x < 200) return;
-  screen->switchToControlPage(); // controls
-}
-void MainPage::redraw() {
-  tft.fillScreen(bgcolor);
-
-  if (forecast[0].fcDate.length() > 0) {
-    drawTempGraphBg(dayIndex(forecast[0].fcDate));
-    drawTempBars();
-  }
-  this->refresh();
-  screen->setTimeout(0);
-}
-
-void MainPage::handleLeavingPage() {
-  screen->setTimeout(20000);
-}
-
-
-void MainPage::refresh() {
-  drawHeatingPlan();
-  drawStatus();
-  drawTemperature();
-}
-
-
-void MainPage::drawTemperature() {
-  drawNumberButton(temperatures.getCurrent(), 130, rgb(0, 192, 192), rgb(0, 0, 128));
-  drawNumberButton(targetTemp, 50, rgb(0, 0, 128), rgb(0, 192, 192));
-}
-
-
-/***** ControlPage ****/
-
-void ControlPage::handleLeavingPage() {
-  adjustTargetTemp(targetTemp);
-}
-
-void ControlPage::handleTouch(TS_Point touch) {
-  if (touch.x > 200) {
-    screen->switchToMainPage();
-  } else {
-    if (touch.y < 120) targetTemp += 0.5;
-    else targetTemp -= 0.5;
-    this->refresh();
-    screen -> setTimeout(20000);
-  }
-}
-void ControlPage::redraw() {
-  tft.fillScreen(rgb(255, 255, 0));
-  drawNumberButton(targetTemp, 50, rgb(0, 0, 128), rgb(0, 192, 192));
-  tft.fillTriangle(100, 20, 170, 100, 30, 100, rgb(255, 192, 192));
-  tft.fillTriangle(100, 220, 170, 140, 30, 140, rgb(192, 255, 255));
-}
-void ControlPage::refresh() {
-  drawNumberButton(targetTemp, 50, rgb(0, 0, 128), rgb(0, 192, 192));
-}
-
-/******************/
-
-void StartupPage::redraw() {
-  tft.setRotation(1);
-  tft.fillScreen(rgb(0, 60, 64)); // (15 << 5) + 8);
-  tft.fillCircle(120, 120, 60, rgb(0, 255, 0)); // 31 << 11); // rgb(255,0,0)
-  tft.setTextColor(0);
-  tft.setTextSize(2); // 12 x 16
-}
-
-/*******************/
 
 void Temperatures:: record() {
   sumOverPeriod += getCurrent();
