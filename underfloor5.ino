@@ -5,6 +5,7 @@
    - Can't get weather should not cause embargo if the failed connection was completed.
   - Modularize
   - non-blocking file operations
+  - checkLowUntil should schedule saveParams for next cycle, not do it immediately
 
   Control underfloor heating.
 
@@ -77,9 +78,6 @@ float lowHoursPerDay = 0.5;  // Hours per day to run when away, to avoid condens
 float avgFactor = 0.7; // skew across forecast days: raise -> today has more influence
 float windSpeedFactor = 0.1; // temp deficit multiplier per 100 mph
 float minsPerDegreePerHour = 0.8;
-float insolationFactor = 0.4; // varies minsPerDegreePerHour from 0.4 to 1.2, winter to summer
-float minimumBurst = 10.0; // minutes
-float startupTime = 3.0; // minutes before heating actually starts
 unsigned long backlightTimeout = 120 * 1000L; // ms
 int backlightSensitivity = 12; // 3..20
 unsigned long connectFailRebootTimeout = 2 * 60 * 60 * 1000L; // 2 hours
@@ -89,7 +87,6 @@ float hourlyWeights[24] =
   0.5, 0.5, 1, 1, 1, 1,
   1, 1, 1, 0, 0, 0
 };
-float cosMonth[12] = {1.0, 0.7, 0.25, -0.2, -0.7, -1.0, -1.0, -0.7, -0.2, 0.25, 0.7, 1.0};
 
 
 #define WIFI_SSID_COUNT 2
@@ -101,9 +98,7 @@ int wifiSelected = 0;
 #define LDR_PIN A5
 
 
-#define THERMISTOR A6
 
-#define HEAT_PIN 7  // Heating power relay
 
 
 
@@ -112,8 +107,8 @@ RTCZero rtc;
 
 Tidal tidal;
 Weather weather;
-Temperatures temperatures;
 Heating heating;
+Temperatures temperatures(heating);
 
 void adjustTargetTemp(float t);
 
@@ -159,9 +154,7 @@ void setup() {
   pinMode(6, OUTPUT); // LED
   digitalWrite(6, LOW);
 
-  heating.isHeatingOn = false;
-  pinMode(HEAT_PIN, OUTPUT); // Heating relay
-  digitalWrite(HEAT_PIN, LOW); // LOW == OFF
+  heating.setup();
 
 
   WiFiDrv::pinMode(25, OUTPUT); //onboard LED green
@@ -548,7 +541,7 @@ void updateParameters(String& content) {
   if (lud.length() == 0) lowUntilDate = "";
   else if (lud.length() == 8 && lud.charAt(2) == '-' && lud.charAt(5) == '-') {
     lowUntilDate = lud;
-    checkLowUntil(); // cancel if already past
+    //checkLowUntil(); // cancel if already past // don't save params while open for reading!
   }
   getFProp(content, "factor", 0.01, 10.0, minsPerDegreePerHour);
   getFProp(content, "skew", 0.01, 1.0, avgFactor);
@@ -853,32 +846,6 @@ String ipString(const char *c) {
   return String(c) + ip[0] + "." + ip[1] + "." + ip[2] + "." + ip[3];
 }
 
-String Heating::periodsReport() {
-  String r;
-  totalHours = 0.0;
-  r += "Periods: \n";
-  for (int i = 0; i < 24; i++) {
-    r += d2((int)period[i]) + " ";
-    totalHours += (period[i] / 60);
-    if (i % 6 == 5) r += "\n";
-  }
-  r += "\nTotal hours: ";
-  r += totalHours;
-  return r;
-}
-
-String Heating::shortPeriodsReport() {
-  String r ("Heat: ");
-  totalHours = 0.0;
-  for (int i = 0; i < 24; i++) {
-    r += (int)(period[i] / 6 + 0.5);
-    totalHours += (period[i] / 60);
-    if (i % 6 == 5) r += " ";
-  }
-  r += " Total hours: ";
-  r += totalHours;
-  return r;
-}
 
 /*
    Weather
@@ -1290,21 +1257,6 @@ String getProp (String &msg, String prop, int msgix, int endSegmentIx)
 */
 
 
-// Switch on or off
-bool Heating::switchHeating() {
-  float periodThisHour = period[rtc.getHours()];
-  if (serviceOn > 0 && serviceOn < millis()) serviceOn = 0;
-  bool shouldBeOn =
-    !serviceOff && (serviceOn > 0 ||
-                    rtc.getMinutes() < periodThisHour);
-  if (shouldBeOn != isHeatingOn) {
-    digitalWrite(HEAT_PIN, (shouldBeOn ? HIGH : LOW));
-    isHeatingOn = shouldBeOn;
-    clogn(isHeatingOn ? "ON" : "OFF");
-    return true;
-  }
-  return false;
-}
 
 float Weather::getForecastTempDiff(float targetTemp) {
   const float invAvgFactor = 1.0 - avgFactor;
@@ -1335,61 +1287,6 @@ float Weather::getForecastTempDiff(float targetTemp) {
   return adjustedDeficit;
 }
 
-void Heating::setPeriods(float avgTempDiff)
-{
-  float seasonal = max(0.2, min(2.0, 1.0 + cosMonth[(rtc.getMonth() + 11) % 12] * insolationFactor)); // insolation of house
-
-  if (avgTempDiff < 0) {
-    for (int i = 0; i < 24; i++) period[i] = 0.0;
-    period[3] = 10;
-    dlogn(String("Negative deficit, setting minimal heating"));
-    return ;
-  }
-
-
-  float weightSum = 0;
-  for (int i = 0; i < 24; i++)
-  {
-    weightSum += hourlyWeights[i];
-  }
-  float excess = 0.0;
-  float avgWeight = weightSum / 24.0;
-  float factor = checkLowUntil () // On holiday?
-                 ? lowHoursPerDay * 60 / weightSum  // Anti-condensation regime for holidays
-                 : avgTempDiff * minsPerDegreePerHour * seasonal / avgWeight; // Spread across hours
-
-  dlogn(String("Season: ") + seasonal + " minsPerDegreePerHour: " + minsPerDegreePerHour + " => mins: " + factor * avgWeight);
-
-  for (int i = 0; i < 24; i++) {
-    period[i] =  factor * hourlyWeights[i];
-    if (period[i] > 50) {
-      excess += period[i] - 50;
-      period[i] = 50;
-    }
-  }
-  if (excess > 0.01) { // cold period, add heat to night
-    for (int i = 18; i >= 0; i--) {
-      if (hourlyWeights[i] < 0.1) {
-        float extra = min(30.0 - period[i], excess);
-        period[i] += extra;
-        excess -= extra;
-        if (excess < 0.1) break;
-      }
-    }
-  }
-  // shift small amounts to next
-  for (int i = 0; i < 23; i++) { // stop short
-    if (period[i] < minimumBurst)
-    {
-      period[i + 1] += period[i];
-      period[i] = 0.0;
-    }
-  }
-  // Add time it takes pump to start
-  for (int i = 0; i < 24; i++) {
-    if (period[i] > 0.01) period[i] += startupTime;
-  }
-}
 
 // Have we set the heating low until a specified date?
 bool checkLowUntil () {
@@ -1592,23 +1489,7 @@ void showIP() {
 }
 
 
-void Temperatures:: record() {
-  sumOverPeriod += getCurrent();
-  periodCount++;
-  if (millis() > previousRecord + 600000) {
-    previousRecord = millis();
-    if (periodCount > 0) {
-      float avgTempOverPeriod = round(10 * sumOverPeriod / periodCount) / 10;
-      File f = SD.open("TEMPERATURES.TXT", FILE_REWRITE);
-      if (f) {
-        f.println(timeString() + " " + (heating.isHeatingOn ? 1 : 0) + " " + avgTempOverPeriod);
-        f.close();
-      }
-      periodCount = 0;
-      sumOverPeriod = 0;
-    }
-  }
-}
+
 
 String Weather::codes[30] =
     { "stars", "sun", "cloud", "cloud", "", "mist", "fog", "Cloud", "ocast", "shwr", "shwr", "drizl",
