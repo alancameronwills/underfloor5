@@ -49,15 +49,16 @@
 */
 
 
-#define TIDE_COLOR 65520 // orange (red[0..31]<<11) + (green[0..63]<<5) + blue[0..31]
-
 #include <Arduino.h>
 #include <SPI.h>
 #include <SD.h>         // SD card for log and param files
 #include <WiFiNINA.h>   // on-board wifi
 #include <WiFiUdp.h>
 #include <RTCZero.h>    // clock
+#include "utility.h"
 #include "logger.h"
+#include "outside.h"    // Tidal, Weather
+#include "inside.h"     // Temperatures, Heating
 #include "screen.h"
 #include <Arduino_MKRENV.h> // https://docs.arduino.cc/hardware/mkr-env-shield 
 #include <Sodaq_wdt.h>  // watchdog
@@ -109,22 +110,14 @@ int wifiSelected = 0;
 // Onboard clock
 RTCZero rtc;
 
-
-Screen screen;
-
-class Temperatures {
-    long previousRecord = 0;
-    float sumOverPeriod = 0;
-    int periodCount = 0;
-  public:
-    float getCurrent() {
-      int v = analogRead(A6);
-      return (v - 250) / 10.4;
-    }
-    void record() ;
-};
-
+Tidal tidal;
+Weather weather;
 Temperatures temperatures;
+Heating heating;
+
+void adjustTargetTemp(float t);
+
+Screen screen (adjustTargetTemp);
 
 
 void truncateLog(const String& logfile = "LOG.TXT");
@@ -133,13 +126,10 @@ void truncateLog(const String& logfile = "LOG.TXT");
 bool gotWeather;              // Weather got successfully, don't retry
 bool gotTides;
 bool gotSun;
+bool periodsValid = false;    // Periods have been set since reboot
 bool truncatedLog;            // Done the truncation this 12-hour
 bool clocked = false;         // Done the 12-hourly update, don't do again this hour
 float avgDeficit = -200.0;    // Average outside temp - target. Invalid <100.
-float totalHours = 0.0;       // Heating per day
-bool periodsValid = false;    // Periods have been set since reboot
-float period [24];            // Minutes in each hour to run heating
-bool isHeatingOn = false;
 // String remoteAddress;         // External address of house network from ping
 bool isProtoBoard = false;    // False -> this is the real device; don't set web name.
 bool isBacklightOn = true;      // Display backlight is lit, will time out
@@ -169,7 +159,7 @@ void setup() {
   pinMode(6, OUTPUT); // LED
   digitalWrite(6, LOW);
 
-  isHeatingOn = false;
+  heating.isHeatingOn = false;
   pinMode(HEAT_PIN, OUTPUT); // Heating relay
   digitalWrite(HEAT_PIN, LOW); // LOW == OFF
 
@@ -254,11 +244,6 @@ void loop() {
 
 /** 0..255 colours to TFT colour
 */
-unsigned rgb(byte r, byte g, byte b)
-{
-  // (red[0..31]<<11) + (green[0..63]<<5) + blue[0..31]
-  return ((r & 248) << 8) + ((g & 252) << 3) + ((b & 248) >> 3);
-}
 
 int failCount = 0;
 int minuteCount = 0;
@@ -278,7 +263,7 @@ void minuteTasks() {
     clocked = false;
   }
 
-  switchHeating(); // switch on or off
+  heating.switchHeating(); // switch on or off
   screen.refresh();
   temperatures.record();
   digitalWrite(6, LOW);
@@ -297,8 +282,8 @@ void tryConnections() {
 
   if (gotWeather) {
     if (gotTides && gotSun) pingConx();
-    if (!gotTides) gotTides = getTides();
-    if (!gotSun) gotSun = getSunMoon();
+    if (!gotTides) gotTides = tidal.getTides();
+    if (!gotSun) gotSun = tidal.getSunMoon();
   }
 
   if (!truncatedLog) {
@@ -321,7 +306,7 @@ bool tryGetWeather() {
     dlogn(ipString("IP "));
     showStatus(ipString("IP "));
     setTimeFromWiFi();
-    if (getWeather())
+    if (weather.getWeather())
     {
       clogn("Got weather");
       success = true;
@@ -343,9 +328,9 @@ bool tryGetWeather() {
     setPeriodsFromDate();
     periodsValid = true;
   }
-  clogn(shortPeriodsReport());
+  clogn(heating.shortPeriodsReport());
   String vac = lowUntilDate.length() > 0 ? String(" Vacation: ") + lowUntilDate : String("");
-  dlogn(String("Target ") + targetTemp + " Avg deficit: " + avgDeficit + vac + " Total heating: " + totalHours);
+  dlogn(String("Target ") + targetTemp + " Avg deficit: " + avgDeficit + vac + " Total heating: " + heating.totalHours);
   screen.switchToMainPage();
   isBacklightOn = true;
   return success;
@@ -790,11 +775,11 @@ void respond(WiFiClient& client, String& req, String& content) {
 void statusPage(WiFiClient& client, bool isUpd) {
   client.println("<pre>");
   String body = timeString() + "   " + (serviceOff ? "SERVICE OFF  " : serviceOn > 0 ? "SERVICE ON  " : "")
-                + (isHeatingOn ? "ON" : "OFF") + "\n\n\n"
-                + "Weather:\n\n" + weatherReport()
+                + (heating.isHeatingOn ? "ON" : "OFF") + "\n\n\n"
+                + "Weather:\n\n" + weather.weatherReport()
                 + "\nAvg Deficit: " + String(avgDeficit, 2)
-                + "\n\n\nTides:\n\n" + tidesReport() + "\n\n";
-  body += periodsReport();
+                + "\n\n\nTides:\n\n" + tidal.tidesReport() + "\n\n";
+  body += heating.periodsReport();
   /*body += "\n\nParameters\n";
     outParams(body);*/
   body += "\n\nFiles\n";
@@ -872,7 +857,7 @@ String ipString(const char *c) {
   return String(c) + ip[0] + "." + ip[1] + "." + ip[2] + "." + ip[3];
 }
 
-String periodsReport() {
+String Heating::periodsReport() {
   String r;
   totalHours = 0.0;
   r += "Periods: \n";
@@ -886,7 +871,7 @@ String periodsReport() {
   return r;
 }
 
-String shortPeriodsReport() {
+String Heating::shortPeriodsReport() {
   String r ("Heat: ");
   totalHours = 0.0;
   for (int i = 0; i < 24; i++) {
@@ -904,16 +889,16 @@ String shortPeriodsReport() {
 
 */
 
-bool getWeather() {
+bool Weather::getWeather() {
   String msg = "";
   if (getWeatherForecast(msg) && parseWeather(msg)) {
-    avgDeficit = getForecastTempDiff();
+    avgDeficit = getForecastTempDiff(targetTemp);
     return true;
   }
   else return false;
 }
 
-bool getWeatherForecast(String& msg)
+bool Weather::getWeatherForecast(String& msg)
 {
   const char* location = "353070";
   const String weatherReq = String("/public/data/val/wxfcs/all/json/") + location + "?res=daily&key=75eea32c-ec7b-499f-9d47-a1ab760bf8da";
@@ -921,16 +906,7 @@ bool getWeatherForecast(String& msg)
 }
 
 
-struct Tide {
-  String eventType;
-  int day;
-  float tod;
-  float height;
-};
-
-Tide tides [4];
-
-String tidesReport() {
+String Tidal::tidesReport() {
   String dst = isSummertime() ? "BST" : "GMT";
   String r;
   for (int i = 0; i < 4; i++) {
@@ -942,15 +918,13 @@ String tidesReport() {
   return r;
 }
 
-float sunRise, sunSet, midday, moonRise, moonSet;
-
-bool getSunMoon() {
+bool Tidal::getSunMoon() {
   bool success = getSunMoon("sun", sunRise, sunSet) && getSunMoon("moon", moonRise, moonSet);
   if (success && moonRise > moonSet) moonSet += 1.1; // show tomorrow's setting
   return success;
 }
 
-bool getSunMoon(String sunOrMoon, float &riseHour, float &setHour) {
+bool Tidal::getSunMoon(String sunOrMoon, float &riseHour, float &setHour) {
   String s;
   String req = "/weatherapi/sunrise/3.0/{3}?lat=52.07&lon=-4.75&date=20{0}-{1}-{2}&offset=+00:00";
   req.replace("{0}", d2(rtc.getYear()));
@@ -965,7 +939,7 @@ bool getSunMoon(String sunOrMoon, float &riseHour, float &setHour) {
 }
 
 
-bool extractRiseSet (String s, String id, float &hour) {
+bool Tidal::extractRiseSet (String s, String id, float &hour) {
   int bodyStart = s.indexOf(id);
   if (bodyStart < 0) return false;
   int tStart = s.indexOf("T", bodyStart);
@@ -1026,7 +1000,7 @@ bool extractRiseSet (String s, String id, float &hour) {
 
 */
 
-bool getTides()
+bool Tidal::getTides()
 {
   for (int i = 0; i < 4; i++) tides[i].eventType = "";
   String tideResponse = "";
@@ -1039,7 +1013,7 @@ bool getTides()
 }
 
 
-bool parseTides(String &msg)
+bool Tidal::parseTides(String &msg)
 {
   int mix = 0;
   bool current = false; // skip tides earlier than the most recent
@@ -1238,39 +1212,15 @@ void webIndicator(bool onOrOff)
   WiFiDrv::analogWrite(26, onOrOff ? 255 : 0);
 }
 
-String codes [] =
-{ "stars", "sun", "cloud", "cloud", "", "mist", "fog", "Cloud", "ocast", "shwr", "shwr", "drizl",
-  "rain", "Shwr", "Shwr", "RAIN",
-  "sleet", "sleet", "Sleet", "hail", "hail",
-  "snow", "snow", "snow", "Snow", "Snow", "SNOW",
-  "thndr", "thndr", "Thndr"
-};
 
-class WeatherDay {
-  public:
-    String fcDate;
-    String tempMin;
-    String tempMax;
-    String windDirection;
-    String windSpeed;
-    String precip;
-    String precipN;
-    String weather;
-    void setWeather(String& weatherCode) {
-      weather = codes[weatherCode.toInt()];
-    };
-    String report () {
-      return day(fcDate) + " " + TwoDigits(tempMax) + ".." + TwoDigits(tempMin) + " " + ThreeChars(windDirection) + TwoDigits(windSpeed) + " " + TwoDigits(precip) + "% " + weather + "\n";
-    };
-};
-
-#define WEATHER_DAYS 5
-
-WeatherDay forecast [WEATHER_DAYS];
 String location = "";
 
+String WeatherDay::report () {
+  return day(fcDate) + " " + TwoDigits(tempMax) + ".." + TwoDigits(tempMin) + " " + ThreeChars(windDirection) + TwoDigits(windSpeed) + " " + TwoDigits(precip) + "% " + weather + "\n";
+};
 
-String weatherReport() {
+
+String Weather::weatherReport() {
   String w = location + "\n";
   for (int i = 0; i < WEATHER_DAYS; i++) {
     if (forecast[i].fcDate.length() > 0) {
@@ -1280,7 +1230,7 @@ String weatherReport() {
   return w;
 }
 
-bool parseWeather(String& msg)
+bool Weather::parseWeather(String& msg)
 {
   //clogn("Parse weather ");
   location = "";
@@ -1316,7 +1266,7 @@ bool parseWeather(String& msg)
     cw.precip = getProp(msg, "PPd", msgix, endSegmentIx);
     cw.precipN = getProp(msg, "PPn", msgix, endSegmentIx);
     String weatherCode = getProp(msg, "W", msgix, endSegmentIx);
-    cw.setWeather(weatherCode);
+    cw.weather = code(weatherCode.toInt());
     report += cw.report();
   }
   clogn(report + "===");
@@ -1345,7 +1295,7 @@ String getProp (String &msg, String prop, int msgix, int endSegmentIx)
 
 
 // Switch on or off
-bool switchHeating() {
+bool Heating::switchHeating() {
   float periodThisHour = period[rtc.getHours()];
   if (serviceOn > 0 && serviceOn < millis()) serviceOn = 0;
   bool shouldBeOn =
@@ -1360,7 +1310,7 @@ bool switchHeating() {
   return false;
 }
 
-float getForecastTempDiff() {
+float Weather::getForecastTempDiff(float targetTemp) {
   const float invAvgFactor = 1.0 - avgFactor;
   float avgTempDiff = 200;
   //int isAfternoon = rtc.getHours() > 12 ? 1 : 0;
@@ -1370,7 +1320,7 @@ float getForecastTempDiff() {
       float mint = forecast[i].tempMin.toFloat();
       float maxt = forecast[i].tempMax.toFloat();
       //clog (String("") + mint + ".." + maxt + " |");
-      int diff = targetTemp - (forecast[i].tempMin.toFloat() * 2 + forecast[i].tempMax.toFloat()) / 3;
+      float diff = targetTemp - (forecast[i].tempMin.toFloat() * 2 + forecast[i].tempMax.toFloat()) / 3;
       if (avgTempDiff > 100) avgTempDiff = diff;
       else avgTempDiff = avgTempDiff * invAvgFactor + diff * avgFactor;
     }
@@ -1389,7 +1339,7 @@ float getForecastTempDiff() {
   return adjustedDeficit;
 }
 
-void setPeriods(float avgTempDiff)
+void Heating::setPeriods(float avgTempDiff)
 {
   float seasonal = max(0.2, min(2.0, 1.0 + cosMonth[(rtc.getMonth() + 11) % 12] * insolationFactor)); // insolation of house
 
@@ -1479,7 +1429,7 @@ bool setPeriodsFromWeather()
       avgDeficit = loggedDeficit;
     }
   }
-  setPeriods(avgDeficit);
+  heating.setPeriods(avgDeficit);
   return true;
 }
 
@@ -1489,7 +1439,7 @@ void setPeriodsFromDate()
 {
   float avgTempDiff = targetTemp - 6.0;
   if (rtc.getYear() > 10) avgTempDiff = targetTemp - statsMean[rtc.getMonth() - 1];
-  setPeriods(avgTempDiff);
+  heating.setPeriods(avgTempDiff);
 }
 
 /*
@@ -1556,7 +1506,7 @@ bool checkReconnect() {
   if (embargoUntil >= 0) {
     // We've already read the previous reconnect timestamp, and decided to embargo reconnection attempts.
     // Don't attempt reconnect until the embargo has expired and the heating is off.
-    if (isHeatingOn) return false;
+    if (heating.isHeatingOn) return false;
     // Assuming embargo period < 12h. 720m==12h, 1440m==24h
     int expired = (nowMinutes - embargoUntil + 720) % 1440 - 720;
     // Could be invalid if RTC was reset. Ignore unbelievably long embargo.
@@ -1634,7 +1584,6 @@ void setTimeFromWiFi()
 
 */
 
-String dayNames [] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 int months [] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365};
 
 int dayIndex(String date)
@@ -1647,7 +1596,7 @@ int dayIndex(String date)
 
 String day (String date)
 {
-  return date + " " + dayNames[dayIndex(date)];
+  return date + " " + dayName(dayIndex(date));
 }
 
 bool isSummertime () {
@@ -1661,99 +1610,14 @@ bool isSummertime () {
 }
 
 
-void drawStatus () {
-  showStatus(timeString().substring(0, 14) + "  " + (isHeatingOn ? "ON" : "OFF"));
+void Page::drawStatus () {
+  showStatus(timeString().substring(0, 14) + "  " + (heating.isHeatingOn ? "ON" : "OFF"));
 }
 
 
 void showIP() {
-  showStatus(ipString("") + " " + (isHeatingOn ? "ON" : "OFF"));
+  showStatus(ipString("") + " " + (heating.isHeatingOn ? "ON" : "OFF"));
 }
-
-void drawTempBars() {
-  for (int i = 0; i < 5; i++)
-  {
-    WeatherDay& fc = forecast[i];
-    if (fc.fcDate.length() > 0) {
-      drawTempBar(i * 2, fc.tempMax.toFloat(), fc.precip.toFloat(), fc.windSpeed.toFloat());
-      drawTempBar(i * 2 + 1, fc.tempMin.toFloat(), fc.precipN.toFloat(), fc.windSpeed.toFloat());
-      drawWindArrow(i, fc.windDirection);
-    }
-  }
-}
-
-void drawWindArrow(int day, String dirn) {
-  const unsigned int lineColor = rgb(0, 255, 0);
-  int dx = 0, dy = 0;
-  const char* c = dirn.c_str();
-  if (c[0] == 'S' || c[0] == 'N') {
-    dy = c[0] == 'N' ? -10 : 10;
-    if (c[1] == '\0') dx = 0;
-    else  {
-      if (c[1] == 'W') dx = -10;
-      else if (c[1] == 'E') dx = 10;
-      else if (c[2] == 'W') dx = -3;
-      else dx = 3;
-    }
-  } else {
-    dx = c[0] == 'W' ? -10 : 10;
-    if (c[1] == 'S') dy = 3;
-    else if (c[1] == 'N') dy = -3;
-  }
-  int y = 15;
-  int x = leftAxis + 15 + day * dayWidth;
-  tft.fillRect(x - 1, y - 1, 3, 3, lineColor);
-  tft.drawLine(x, y, x - dx, y - dy, lineColor);
-}
-
-void drawTempBar(int xv, float t, float rain, float wind)
-{
-  //clogn (String("tempBar ") + t + " " + rain);
-  int width = min(18, 4 + wind / 3);
-  int x = leftAxis + 10 + (xv) * dayWidth / 2 - width / 2;
-  int h = int(min(30, max(-10, t)) * 3);
-  unsigned int barColor = int((100 - rain) * 0.63) << 5;
-  if (h < 2 && h > -2)
-    tft.fillRect(x, zeroAxis - 3, width, 6, barColor);
-  else if (h > 0)
-    tft.fillRect(x, zeroAxis - h, width, h, barColor);
-  else
-    tft.fillRect(x, zeroAxis, width, -h, barColor);
-}
-
-void drawTempGraphBg(int firstDay)
-{
-  vgrade(26, 16, 4, 32, 54, 12, 0, 75);
-  vgrade(32, 54, 12, 26, 62, 29, 75, 90);
-  vgrade(26, 62, 29, 0, 63, 31, 90, 120);
-  // X axis:
-  tft.drawFastHLine(leftAxis, 90, tft.width() - 20, 0);
-  // Graduations at 10 and 20:
-  unsigned int grey = 16 << 11 | 32 << 5 | 16;
-  tft.drawFastHLine(leftAxis, 15, tft.width() - 20, grey);
-  tft.drawFastHLine(leftAxis, 30, tft.width() - 20, grey);
-  tft.drawFastHLine(leftAxis, 45, tft.width() - 20, grey);
-  tft.drawFastHLine(leftAxis, 60, tft.width() - 20, grey);
-  tft.drawFastHLine(leftAxis, 75, tft.width() - 20, grey);
-  tft.drawFastHLine(leftAxis, 85, tft.width() - 20, grey);
-  // Y axis:
-  tft.drawFastVLine(leftAxis, 0, 120, 0);
-  // X axis labels:
-  tft.setTextColor(0);
-  tft.setTextSize(2); // 12 x 16
-  show(4, 22, "20");
-  show(4, 52, "10");
-  show(4, 82, " 0");
-  // Y axis labels:
-  int dayCursor = 30;
-  for (int i = firstDay; i < firstDay + 5; i++) {
-    show(dayCursor, 92, dayNames[i % 7]);
-    dayCursor += dayWidth;
-  }
-}
-
-/***** Screen **************/
-
 
 
 void Temperatures:: record() {
@@ -1762,10 +1626,10 @@ void Temperatures:: record() {
   if (millis() > previousRecord + 600000) {
     previousRecord = millis();
     if (periodCount > 0) {
-      float avgTempOverPeriod = round(10*sumOverPeriod / periodCount)/10;
+      float avgTempOverPeriod = round(10 * sumOverPeriod / periodCount) / 10;
       File f = SD.open("TEMPERATURES.TXT", FILE_REWRITE);
       if (f) {
-        f.println(timeString() + " " + (isHeatingOn?1:0) + " " + avgTempOverPeriod);
+        f.println(timeString() + " " + (heating.isHeatingOn ? 1 : 0) + " " + avgTempOverPeriod);
         f.close();
       }
       periodCount = 0;
@@ -1773,6 +1637,20 @@ void Temperatures:: record() {
     }
   }
 }
+
+String Weather::codes[30] =
+    { "stars", "sun", "cloud", "cloud", "", "mist", "fog", "Cloud", "ocast", "shwr", "shwr", "drizl",
+      "rain", "Shwr", "Shwr", "RAIN",
+      "sleet", "sleet", "Sleet", "hail", "hail",
+      "snow", "snow", "snow", "Snow", "Snow", "SNOW",
+      "thndr", "thndr", "Thndr"
+    };
+
+String dayNames [] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+String dayName(int i) {
+  return dayNames[i];
+}
+
 // Let the watchdog time out
 void softReboot() {
   dlogn("Reboot");
