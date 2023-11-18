@@ -12,6 +12,7 @@ extern Temperatures temperatures;
 extern Heating heating;
 
 extern float targetTemp;
+String ipString(const char *c);
 
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 
@@ -66,6 +67,13 @@ unsigned Page::rgb(byte r, byte g, byte b)
   return ((r & 248) << 8) + ((g & 252) << 3) + ((b & 248) >> 3);
 }
 
+void Page::drawStatus () {
+  showStatus(timeString().substring(0, 14) + "  " + (heating.isHeatingOn ? "ON" : "OFF"));
+}
+
+void showIP() {
+  showStatus(ipString("") + " " + (heating.isHeatingOn ? "ON" : "OFF"));
+}
 
 void MainPage::drawHeatingPlan()
 {
@@ -166,9 +174,6 @@ void show(int x, int y, String text)
   tft.print(text);
 }
 
-void backlightOn(bool on) {
-  digitalWrite(BACKLIGHT, on ? LOW : HIGH);
-}
 
 /// Draw vertical gradient across width of screen. 5-6-5 color: r:{0..31},g:{0..63},b:{0..31}
 void vgrade(float rFrom, float gFrom, float bFrom, float rTo, float gTo, float bTo, int yFrom, int yTo)
@@ -351,4 +356,27 @@ void showStatus(String s) {
 }
 
 
-/***** Screen **************/
+void Backlight::loop(unsigned long m)
+{
+  skip = (skip++) % 3;
+  if (skip != 0) return;
+#ifdef LDR_PIN
+  int lux = analogRead(LDR_PIN); // Light dependent resistor
+  if (abs(recentLux - lux) > backlightSensitivity && blinker == 0)
+  {
+    clogn(String("BL ") + recentLux + "  " + lux);
+    if (!isBacklightOn) backlightWentOn = m;
+    else showIP();
+  }
+  recentLux = lux;
+  if (blinker > 0) blinker--;
+  if (((long)(m - backlightWentOn - backlightTimeout) > 0) == isBacklightOn) {
+    on(!isBacklightOn);
+    blinker = 2; // suppress response to own change
+  }
+#else
+  if (!isBacklightOn) {
+    backlight.on(true);
+  }
+#endif
+}

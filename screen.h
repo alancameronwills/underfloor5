@@ -36,6 +36,8 @@
 #define TIDE_COLOR 65520 // orange (red[0..31]<<11) + (green[0..63]<<5) + blue[0..31]
 
 
+void showIP();
+
 extern Adafruit_ILI9341 tft;
 class PageController {
   public:
@@ -152,9 +154,32 @@ class Screen : PageController {
 };
 
 
+#define LDR_PIN A5
+
+class Backlight {
+    const unsigned long backlightTimeout = 120 * 1000L; // ms
+    const int backlightSensitivity = 12; // 3..20
+    bool isBacklightOn = true;      // Display backlight is lit, will time out
+    unsigned long backlightWentOn = 0;
+    int recentLux = 0;
+    int skip = 0;
+    int blinker = 0;
+  public:
+    void setup() {
+      pinMode(BACKLIGHT, OUTPUT);     // screen Backlight
+      on(true);
+    }
+    void loop(unsigned long m) ;
+    void on(bool on) {
+      isBacklightOn = on;
+      digitalWrite(BACKLIGHT, on ? LOW : HIGH);
+    }
+};
+
+
+
 void show(int x, int y, String text);
 
-void backlightOn(bool on) ;
 
 /// Draw vertical gradient across width of screen. 5-6-5 color: r:{0..31},g:{0..63},b:{0..31}
 void vgrade(float rFrom, float gFrom, float bFrom, float rTo, float gTo, float bTo, int yFrom, int yTo);

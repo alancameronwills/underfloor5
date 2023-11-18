@@ -76,8 +76,6 @@ float lowHoursPerDay = 0.5;  // Hours per day to run when away, to avoid condens
 float avgFactor = 0.7; // skew across forecast days: raise -> today has more influence
 float windSpeedFactor = 0.1; // temp deficit multiplier per 100 mph
 float minsPerDegreePerHour = 0.8;
-unsigned long backlightTimeout = 120 * 1000L; // ms
-int backlightSensitivity = 12; // 3..20
 unsigned long connectFailRebootTimeout = 2 * 60 * 60 * 1000L; // 2 hours
 float hourlyWeights[24] =
 { 0, 0, 0, 0, 0, 0,
@@ -91,8 +89,6 @@ float hourlyWeights[24] =
 String wifiSSID[] = {"Pant-y-Wylan", "Pant-2-Wylan"};
 int wifiSelected = 0;
 
-#define LDR_PIN A5
-
 // Onboard clock
 RTCZero rtc;
 
@@ -104,6 +100,8 @@ WebService webService;
 
 void adjustTargetTemp(float t);
 Screen screen (adjustTargetTemp);
+Backlight backlight;
+
 
 void truncateLog(const String& logfile = "LOG.TXT");
 
@@ -117,7 +115,6 @@ bool clocked = false;         // Done the 12-hourly update, don't do again this 
 float avgDeficit = -200.0;    // Average outside temp - target. Invalid <100.
 // String remoteAddress;         // External address of house network from ping
 bool isProtoBoard = false;    // False -> this is the real device; don't set web name.
-bool isBacklightOn = true;      // Display backlight is lit, will time out
 
 
 
@@ -127,30 +124,25 @@ void setup() {
   // Disable watchdog - may still be running after reset:
   sodaq_wdt_disable();
 
-  gotWeather = false;
-  clocked = false;
-  periodsValid = false;
-
-  pinMode(BACKLIGHT, OUTPUT);     // screen Backlight
-  backlightOn(true);
-
-  pinMode(SD_CS, OUTPUT);       // SD card chip select
-  digitalWrite(SD_CS, HIGH);
-
+  
   pinMode(6, OUTPUT); // LED
   digitalWrite(6, LOW);
-
-  heating.setup();
-
-
   WiFiDrv::pinMode(25, OUTPUT); //onboard LED green
   WiFiDrv::pinMode(26, OUTPUT); //onboard LED red
   WiFiDrv::pinMode(27, OUTPUT); //onboard LED blue
 
+  gotWeather = false;
+  clocked = false;
+  periodsValid = false;
 
   rtc.begin();
+  
+  pinMode(SD_CS, OUTPUT);       // SD card chip select
+  digitalWrite(SD_CS, HIGH);
   int sdOK = SD.begin(SD_CS);
 
+  backlight.setup();
+  heating.setup();
   screen.start();
 
   ENV.begin(); // https://docs.arduino.cc/hardware/mkr-env-shield
@@ -200,7 +192,7 @@ void loop() {
   }
 
   // Respond to photocell
-  backlight(m); // light up screen if rqd
+  backlight.loop(m); // light up screen if rqd
 
   // Serve incoming web request:
   webService.loop();
@@ -270,7 +262,7 @@ void getAgain() {
 
 bool tryGetWeather() {
   bool success = false;
-  backlightOn(true);
+  backlight.on(true);
   showStatus("Connecting...");
   if (connectWiFi())
   {
@@ -303,45 +295,13 @@ bool tryGetWeather() {
   String vac = heating.lowUntilDate.length() > 0 ? String(" Vacation: ") + heating.lowUntilDate : String("");
   dlogn(String("Target ") + targetTemp + " Avg deficit: " + avgDeficit + vac + " Total heating: " + heating.totalHours);
   screen.switchToMainPage();
-  isBacklightOn = true;
   return success;
 }
 
-//  Backlight control
-
-unsigned long backlightWentOn = 0;
-int recentLux = 0;
-int skip = 0;
-int blinker = 0;
-void backlight(unsigned long m) {
-  skip = (skip++) % 3;
-  if (skip != 0) return;
-#ifdef LDR_PIN
-  int lux = analogRead(LDR_PIN); // Light dependent resistor
-  if (abs(recentLux - lux) > backlightSensitivity && blinker == 0)
-  {
-    clogn(String("BL ") + recentLux + "  " + lux);
-    if (!isBacklightOn) backlightWentOn = m;
-    else showIP();
-  }
-  recentLux = lux;
-  if (blinker > 0) blinker--;
-  if (((long)(m - backlightWentOn - backlightTimeout) > 0) == isBacklightOn) {
-    isBacklightOn = !isBacklightOn;
-    backlightOn(isBacklightOn);
-    blinker = 2; // suppress response to own change
-  }
-#else
-  if (!isBacklightOn) {
-    isBacklightOn = true;
-    backlightOn(true);
-  }
-#endif
-}
 
 void doItNow () {
   schedMinute = 0;    // do it now
-  recentLux = 0;      // light up screen
+  backlight.on(true);      // light up screen
   gotWeather = false; // force recalc with new parameters
 }
 
@@ -819,22 +779,6 @@ void setTimeFromWiFi()
     clogn("Got time");
   }
   else dlogn ("Failed to get time");
-}
-
-/*
-   Date time
-
-*/
-
-
-
-void Page::drawStatus () {
-  showStatus(timeString().substring(0, 14) + "  " + (heating.isHeatingOn ? "ON" : "OFF"));
-}
-
-
-void showIP() {
-  showStatus(ipString("") + " " + (heating.isHeatingOn ? "ON" : "OFF"));
 }
 
 
