@@ -2,6 +2,7 @@
 #include <RTCZero.h>
 #include "logger.h"
 #include "utility.h"
+#include "webclient.h"
 
 extern float avgDeficit;
 extern float targetTemp;
@@ -9,7 +10,6 @@ extern float windSpeedFactor;
 extern float avgFactor;
 extern bool logging;
 
-bool getWeb(char* host, int port, String request, String extraLine, String& response);
 
 /*
    Weather

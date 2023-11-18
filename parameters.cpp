@@ -31,7 +31,7 @@ void updateParameters(String& content) {
   if (lud.length() == 0) heating.lowUntilDate = "";
   else if (lud.length() == 8 && lud.charAt(2) == '-' && lud.charAt(5) == '-') {
     heating.lowUntilDate = lud;
-    //checkLowUntil(); // cancel if already past // don't save params while open for reading!
+    //checkLowUntil(); // cancel if already past // don't save params while open for reading! <<<< FIX TODO
   }
   getFProp(content, "factor", 0.01, 10.0, minsPerDegreePerHour);
   getFProp(content, "skew", 0.01, 1.0, avgFactor);

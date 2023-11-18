@@ -70,11 +70,6 @@
 // Parameter default values, overridden by setup read from P file
 
 bool logging = true;
-unsigned long connectFailRebootTimeout = 2 * 60 * 60 * 1000L; // 2 hours
-
-#define WIFI_SSID_COUNT 2
-String wifiSSID[] = {"Pant-y-Wylan", "Pant-2-Wylan"};
-int wifiSelected = 0;
 
 // Onboard clock
 RTCZero rtc;
@@ -83,7 +78,7 @@ Tidal tidal;
 Weather weather;
 Heating heating;
 Temperatures temperatures(heating);
-WebService webService;
+WebService webservice;
 
 void adjustTargetTemp(float t);
 Screen screen (adjustTargetTemp);
@@ -138,7 +133,6 @@ void setup() {
   byte mac[6];
   WiFi.macAddress(mac);
   isProtoBoard = mac[0] != 0x50;
-  wifiSelected = 0;
 
   if (logging) {
     Serial.begin(115200);
@@ -182,7 +176,7 @@ void loop() {
   backlight.loop(m); // light up screen if rqd
 
   // Serve incoming web request:
-  webService.loop();
+  webservice.loop();
 
   screen.loop();
 
@@ -251,7 +245,7 @@ bool tryGetWeather() {
   bool success = false;
   backlight.on(true);
   showStatus("Connecting...");
-  if (connectWiFi())
+  if (webservice.connectWiFi())
   {
     dlogn(ipString("IP "));
     showStatus(ipString("IP "));
@@ -297,18 +291,7 @@ void doItNow () {
 
 // Remind router we're here
 void pingConx() {
-  /*
-    String reply;
-    getWeb((char *)"cameronwills.org", 80, String("/cgi-bin/env.pl"), "", reply);
-    int p = reply.indexOf("REMOTE_ADDR")+15;
-    if (p > 15) {
-      int p2 = reply.indexOf("<", p);
-      if (p2 > p && p2-p < 16) {
-        remoteAddress = reply.substring(p, p2);
-      }
-    }
-  */
-  if (connectWiFi()) {
+  if (webservice.connectWiFi()) {
     clog("ping ");
     unsigned long m = millis();
     WiFi.ping("google.co.uk");
@@ -320,163 +303,6 @@ String ipString(const char *c) {
   IPAddress ip = WiFi.localIP();
   return String(c) + ip[0] + "." + ip[1] + "." + ip[2] + "." + ip[3];
 }
-
-
-bool sendWebReq (WiFiClient &client, char* host, int port, String request, String extraLine) {
-  if (WiFi.status() != WL_CONNECTED) {
-    if (!connectWiFi()) return false;
-  }
-
-  String req = String("GET ") + request + " HTTP/1.1\r\n"
-               + extraLine
-               + "Host: " + host + "\r\n"
-               + "Accept: application/json charset=UTF-8\r\n"
-               + "User-Agent: WeatherApp\r\n"
-               + "Connection: close\r\n"
-               + "Content-length: 0\r\n"
-               + "\r\n";
-
-  clogn(String("WEB REQ ") + host + ":" + port + "\n" + req);
-  sodaq_wdt_reset();
-  if (port == 443 ? client.connectSSL(host, port) : client.connect(host, port))
-  {
-    //clog(String(millis() % 100000) + "+");
-    client.print(req);
-    clogn("  SENT");
-    return true;
-  }
-  else {
-    clogn("Failed to connect");
-    return false;
-  }
-}
-
-bool getWebBlock (char* host, int port, String request, String extraLine, String& response, WiFiClient &client)
-{
-  clog(":");
-  webIndicator(true);
-  if (!sendWebReq(client, host, port, request, extraLine)) return false;
-
-  response = "";
-
-  int contentMax = 10000;
-  int contentLength = contentMax; // Read from header
-  int headerEnd = 0;     // Position of blank line
-  const int bufsize = 3000;
-  char buf [bufsize];
-  unsigned long startTime = millis();
-  bool timedOut = false;
-  bool lengthGot = false;
-  while (client.connected() && !timedOut && !lengthGot)
-  {
-    clog(String(millis() % 10000) + ":");
-    while (client.available() && !timedOut && !lengthGot) {
-      clog(String(millis() % 10000) + ".");
-      int charCount = client.read((unsigned char*)buf, contentLength > 0 ? min(contentLength, bufsize - 1) : bufsize - 1);
-      *(buf + charCount) = '\0'; // String terminator
-      response += buf;
-      if (contentLength == contentMax) {
-        int icl = response.indexOf("Content-Length:");
-        if (icl >= 0) {
-          contentLength = response.substring(icl + 16, icl + 24).toInt();
-          clogn(String("Content-Length: ") + contentLength);
-        }
-      }
-      if (headerEnd == 0) {
-        int eol = response.indexOf("\n");
-        clogn(response.substring(0, eol));
-      }
-      if (headerEnd <= 0) headerEnd = response.lastIndexOf("\n\r\n") + 3;
-      if (headerEnd <= 0) headerEnd = response.lastIndexOf("\n\n") + 2;
-
-      timedOut = (unsigned long)(millis() - startTime) > webClientTimeout;
-      lengthGot = headerEnd > 0 && contentLength > 0 && response.length() >= headerEnd + contentLength;
-    }
-    delay(10);
-    timedOut = (unsigned long)(millis() - startTime) > webClientTimeout;
-  }
-  clogn(String("Get took: ") + ((unsigned long)(millis() - startTime) / 1000.0));
-  client.stop();
-  webIndicator(false);
-  clogn(response);
-  return response.length() > 200;
-}
-
-
-
-bool getWeb(char* host, int port, String request, String extraLine, String& response) {
-  WiFiClient client;
-  return getWeb(host, port, request, extraLine, response, client);
-}
-
-bool getWeb(char* host, int port, String request, String extraLine, String& response, WiFiClient &client)
-{
-  bool detail = false;
-  bool tides = String(host).indexOf("easytide") >= 0;
-  webIndicator(true);
-  int charCount = 0; // including CRs
-  int braceCount = 0;
-  int headerEnd = 0; // start of body
-  const int contentLengthMax = 20000;
-  int contentLength = contentLengthMax; // read from Content-Length field
-  bool lengthGot = false; // read contentLength chars from body
-  bool timedOut = false;
-  unsigned long startTime = millis();
-  //clog(String(startTime % 100000) + ";");
-
-  if (!sendWebReq(client, host, port, request, extraLine)) return false;
-  response = "";
-  clog(String("="));
-  while (client.connected() && !timedOut && !lengthGot)
-  {
-    //clog(String(millis() % 100000) + ":");
-    while (client.available() && client.connected() && !timedOut && !lengthGot) {
-      //if (detail) clog(String(millis() % 100000) + "[");
-      char c = client.read();
-      //if (detail) clog(String(c));
-      timedOut = (unsigned long)(millis() - startTime) > webClientTimeout;
-      charCount++;
-      if (contentLength > 0 && charCount >= contentLength) lengthGot = true;
-      if (c == '\r') continue; // omit CRs except for counting
-      response += c;
-      if (c == '\n') {
-        if (contentLength == contentLengthMax && headerEnd == 0) {
-          clog("-");
-          String s = String(response);
-          s.toLowerCase();
-          int icl = s.indexOf("content-length:");
-          if (icl >= 0) {
-            clog("#");
-            contentLength = s.substring(icl + 16, icl + 24).toInt();
-            clogn(String("Content-Length: ") + contentLength);
-          }
-        } else {
-          clog("_");
-        }
-        if (headerEnd == 0 && charCount > 2 && response.charAt(response.length() - 2) == '\n') { // EOH
-          headerEnd = charCount;
-          charCount = 0;
-        }
-      }
-      if (tides && c == '}' && braceCount++ > 8) lengthGot = true;
-    }
-    //clog(String(millis() % 100000) + "]");
-    timedOut = (unsigned long)(millis() - startTime) > webClientTimeout;
-    delay(10);
-  }
-  clogn(String("Get took: ") + ((unsigned long)(millis() - startTime) / 1000.0) + (timedOut ? " timed out" : ""));
-  client.stop();
-  webIndicator(false);
-  clogn(response);
-  return response.length() > 200;
-}
-
-void webIndicator(bool onOrOff)
-{
-  digitalWrite(6, onOrOff ? HIGH : LOW);
-  WiFiDrv::analogWrite(26, onOrOff ? 255 : 0);
-}
-
 
 
 
@@ -538,110 +364,7 @@ void setPeriodsFromDate()
    WiFi
 
 */
-unsigned long connectFailStart = 0;
-bool connectWiFi ()
-{
-  if (WiFi.status() != WL_CONNECTED)
-  {
-    if (!checkReconnect()) {
-      return false;
-    }
-    clog("Connecting");
-    if (!isProtoBoard) WiFi.setHostname("heating.local");
-    for (int tryCount = 0; tryCount < 3 && WiFi.status() != WL_CONNECTED; tryCount++) {
-      WiFi.begin(wifiSSID[wifiSelected].c_str(), "egg2hell");
-      int count = 20;
-      while (WiFi.status() != WL_CONNECTED && count-- > 0)
-      {
-        clog(".");
-        delay(200);
-        digitalWrite(6, HIGH);
-        delay(800);
-        digitalWrite(6, LOW);
-        sodaq_wdt_reset();
-      }
-      if (WiFi.status() != WL_CONNECTED) {
-        wifiSelected = (wifiSelected + 1) % WIFI_SSID_COUNT;
-      }
-    }
 
-    if (WiFi.status() == WL_CONNECTED) {
-      clogn(String(":) ") + wifiSSID[wifiSelected]);
-      connectFailStart = 0;
-      webService.start();
-    }
-    else {
-      clogn(":(");
-      digitalWrite(6, HIGH);
-      if (connectFailStart == 0) connectFailStart = millis();
-      else {
-        if ((unsigned long) (millis() - connectFailStart) > connectFailRebootTimeout) softReboot();
-      }
-    }
-  }
-  return WiFi.status() == WL_CONNECTED;
-}
-
-/*
-   Prevent repeated connection attempts resulting in restarts.
-
-*/
-
-const int embargoPeriod = 15; // minutes
-int embargoUntil = -1; // ToD in minutes to resume attempts
-bool checkReconnect() {
-  if (logging || isProtoBoard) return true;
-  bool goAhead = true;
-  int nowMinutes = rtc.getHours() * 60 + rtc.getMinutes();
-  if (embargoUntil >= 0) {
-    // We've already read the previous reconnect timestamp, and decided to embargo reconnection attempts.
-    // Don't attempt reconnect until the embargo has expired and the heating is off.
-    if (heating.isHeatingOn) return false;
-    // Assuming embargo period < 12h. 720m==12h, 1440m==24h
-    int expired = (nowMinutes - embargoUntil + 720) % 1440 - 720;
-    // Could be invalid if RTC was reset. Ignore unbelievably long embargo.
-    if (expired < 0 && (0 - expired) <= embargoPeriod) return false;
-    // Cancel embargo:
-    embargoUntil = -1;
-  }
-  else {
-    // No embargo currently set. Might be first attempt after reset.
-    // Look to see if there was a recent reconnection attempt.
-    const int bufsz = 40;
-    char buf[bufsz];
-    File f = SD.open("TRY_CONX.TXT", FILE_READ);
-    if (f) {
-      int count = f.read(buf, bufsz - 1);
-      f.close();
-      buf[count] = '\0';
-      String s (buf);
-
-      // If last connection (maybe before a reset) was recent, don't retry for a while.
-      int loggedTodMinutes = s.toInt();
-      // Ludicrous definition of % for -ve input.
-      int sinceLastConnect = (nowMinutes - loggedTodMinutes + 1440) % 1440; // 24h
-      if (sinceLastConnect < embargoPeriod)
-      {
-        // There was a recent reconnection attempt.
-        // Embargo reconnections for a while.
-        embargoUntil = (loggedTodMinutes + embargoPeriod) % 1440;
-        goAhead = false;
-        dlogn(String("Embargo reconnect until ") + d2((int)(embargoUntil / 60)) + ":" + embargoUntil % 60);
-      }
-      else {
-        goAhead = true;
-      }
-    } else {
-      goAhead = true;
-    }
-  }
-  if (goAhead) {
-    File ff = SD.open("TRY_CONX.TXT", FILE_REWRITE);
-    ff.println(String(nowMinutes) + " #" + avgDeficit);
-    ff.close();
-  }
-  return goAhead;
-}
 
 void setTimeFromWiFi()
 {

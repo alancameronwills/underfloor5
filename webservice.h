@@ -10,8 +10,14 @@
 class WebService {
     WiFiServer server;
     void serveClient(WiFiClient&);
+
+    unsigned long connectFailStart = 0;
+    const int embargoPeriod = 15; // minutes
+    int embargoUntil = -1; // ToD in minutes to resume attempts
+    bool checkReconnect();
   public:
-    WebService() : server(80){}
+    WebService() : server(80) {}
+    bool connectWiFi ();
     void start() {
       if (server.status() == 0) {
         server.begin();

@@ -4,16 +4,26 @@
 #include "inside.h"
 #include "outside.h"
 
+#include <RTCZero.h>
+#include <Sodaq_wdt.h>  // watchdog
 
+
+#define WIFI_SSID_COUNT 2
+String wifiSSID[] = {"Pant-y-Wylan", "Pant-2-Wylan"};
+int wifiSelected = 0;
+
+unsigned long connectFailRebootTimeout = 2 * 60 * 60 * 1000L; // 2 hours
 
 extern Tidal tidal;
 extern Weather weather;
 extern Temperatures temperatures;
 extern Heating heating;
+extern bool isProtoBoard;
 
 
 extern float targetTemp;
 extern float avgDeficit;
+extern bool logging;
 
 
 extern float hourlyWeights[];
@@ -389,4 +399,109 @@ void WebService::serveClient(WiFiClient& client)
   client.stop();
   clogn("Disconnected");
   if (request.indexOf(" /reboot") > 0) softReboot();
+}
+
+
+
+bool WebService::connectWiFi ()
+{
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    if (!checkReconnect()) {
+      return false;
+    }
+    clog("Connecting");
+    if (!isProtoBoard) WiFi.setHostname("heating.local");
+    for (int tryCount = 0; tryCount < 3 && WiFi.status() != WL_CONNECTED; tryCount++) {
+      WiFi.begin(wifiSSID[wifiSelected].c_str(), "egg2hell");
+      int count = 20;
+      while (WiFi.status() != WL_CONNECTED && count-- > 0)
+      {
+        clog(".");
+        delay(200);
+        digitalWrite(6, HIGH);
+        delay(800);
+        digitalWrite(6, LOW);
+        sodaq_wdt_reset();
+      }
+      if (WiFi.status() != WL_CONNECTED) {
+        wifiSelected = (wifiSelected + 1) % WIFI_SSID_COUNT;
+      }
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+      clogn(String(":) ") + wifiSSID[wifiSelected]);
+      connectFailStart = 0;
+      start();
+    }
+    else {
+      clogn(":(");
+      digitalWrite(6, HIGH);
+      if (connectFailStart == 0) connectFailStart = millis();
+      else {
+        if ((unsigned long) (millis() - connectFailStart) > connectFailRebootTimeout) softReboot();
+      }
+    }
+  }
+  return WiFi.status() == WL_CONNECTED;
+}
+
+
+/*
+   Prevent repeated connection attempts resulting in restarts.
+
+*/
+
+bool WebService::checkReconnect() {
+  if (logging || isProtoBoard) return true;
+  bool goAhead = true;
+  int nowMinutes = rtc.getHours() * 60 + rtc.getMinutes();
+  if (embargoUntil >= 0) {
+    // We've already read the previous reconnect timestamp, and decided to embargo reconnection attempts.
+    // Don't attempt reconnect until the embargo has expired and the heating is off.
+    if (heating.isHeatingOn) return false;
+    // Assuming embargo period < 12h. 720m==12h, 1440m==24h
+    int expired = (nowMinutes - embargoUntil + 720) % 1440 - 720;
+    // Could be invalid if RTC was reset. Ignore unbelievably long embargo.
+    if (expired < 0 && (0 - expired) <= embargoPeriod) return false;
+    // Cancel embargo:
+    embargoUntil = -1;
+  }
+  else {
+    // No embargo currently set. Might be first attempt after reset.
+    // Look to see if there was a recent reconnection attempt.
+    const int bufsz = 40;
+    char buf[bufsz];
+    File f = SD.open("TRY_CONX.TXT", FILE_READ);
+    if (f) {
+      int count = f.read(buf, bufsz - 1);
+      f.close();
+      buf[count] = '\0';
+      String s (buf);
+
+      // If last connection (maybe before a reset) was recent, don't retry for a while.
+      int loggedTodMinutes = s.toInt();
+      // Ludicrous definition of % for -ve input.
+      int sinceLastConnect = (nowMinutes - loggedTodMinutes + 1440) % 1440; // 24h
+      if (sinceLastConnect < embargoPeriod)
+      {
+        // There was a recent reconnection attempt.
+        // Embargo reconnections for a while.
+        embargoUntil = (loggedTodMinutes + embargoPeriod) % 1440;
+        goAhead = false;
+        dlogn(String("Embargo reconnect until ") + d2((int)(embargoUntil / 60)) + ":" + embargoUntil % 60);
+      }
+      else {
+        goAhead = true;
+      }
+    } else {
+      goAhead = true;
+    }
+  }
+  if (goAhead) {
+    File ff = SD.open("TRY_CONX.TXT", FILE_REWRITE);
+    ff.println(String(nowMinutes) + " #" + avgDeficit);
+    ff.close();
+  }
+  return goAhead;
 }
