@@ -61,6 +61,7 @@
 #include "outside.h"    // Tidal, Weather
 #include "inside.h"     // Temperatures, Heating
 #include "screen.h"
+#include "webservice.h"
 #include <Arduino_MKRENV.h> // https://docs.arduino.cc/hardware/mkr-env-shield 
 #include <Sodaq_wdt.h>  // watchdog
 #include <utility/wifi_drv.h> // for indicator lamp WiFiDrv
@@ -71,9 +72,6 @@ bool logging = true;
 int webClientTimeout = 12000;  // ms
 int updateHour = 3; // AM and PM weather update
 float targetTemp = 20;
-String lowUntilDate = "";    // Use when on holiday YY-MM-DD
-bool serviceOff = false;
-long serviceOn = 0;
 float lowHoursPerDay = 0.5;  // Hours per day to run when away, to avoid condensation
 float avgFactor = 0.7; // skew across forecast days: raise -> today has more influence
 float windSpeedFactor = 0.1; // temp deficit multiplier per 100 mph
@@ -93,14 +91,7 @@ float hourlyWeights[24] =
 String wifiSSID[] = {"Pant-y-Wylan", "Pant-2-Wylan"};
 int wifiSelected = 0;
 
-
-
 #define LDR_PIN A5
-
-
-
-
-
 
 // Onboard clock
 RTCZero rtc;
@@ -109,11 +100,10 @@ Tidal tidal;
 Weather weather;
 Heating heating;
 Temperatures temperatures(heating);
+WebService webService;
 
 void adjustTargetTemp(float t);
-
 Screen screen (adjustTargetTemp);
-
 
 void truncateLog(const String& logfile = "LOG.TXT");
 
@@ -129,7 +119,6 @@ float avgDeficit = -200.0;    // Average outside temp - target. Invalid <100.
 bool isProtoBoard = false;    // False -> this is the real device; don't set web name.
 bool isBacklightOn = true;      // Display backlight is lit, will time out
 
-WiFiServer server(80);
 
 
 // ENTRY: Initialization
@@ -147,9 +136,6 @@ void setup() {
 
   pinMode(SD_CS, OUTPUT);       // SD card chip select
   digitalWrite(SD_CS, HIGH);
-
-  pinMode(TFT_CS, OUTPUT);    // screen chip select
-  digitalWrite(TFT_CS, HIGH);
 
   pinMode(6, OUTPUT); // LED
   digitalWrite(6, LOW);
@@ -217,11 +203,7 @@ void loop() {
   backlight(m); // light up screen if rqd
 
   // Serve incoming web request:
-  WiFiClient sclient = server.available();
-  if (sclient) {
-    clogn("server client");
-    serveClient(sclient);
-  }
+  webService.loop();
 
   screen.loop();
 
@@ -318,13 +300,12 @@ bool tryGetWeather() {
     periodsValid = true;
   }
   clogn(heating.shortPeriodsReport());
-  String vac = lowUntilDate.length() > 0 ? String(" Vacation: ") + lowUntilDate : String("");
+  String vac = heating.lowUntilDate.length() > 0 ? String(" Vacation: ") + heating.lowUntilDate : String("");
   dlogn(String("Target ") + targetTemp + " Avg deficit: " + avgDeficit + vac + " Total heating: " + heating.totalHours);
   screen.switchToMainPage();
   isBacklightOn = true;
   return success;
 }
-
 
 //  Backlight control
 
@@ -358,178 +339,13 @@ void backlight(unsigned long m) {
 #endif
 }
 
-
-
-// Files on SD card
-void listDirectory(File dir, int indent, String&out) {
-  while (true) {
-    File entry =  dir.openNextFile();
-    if (! entry) {
-      break;
-    }
-    for (uint8_t i = 0; i < indent; i++) {
-      out += '\t';
-    }
-    out += entry.name();
-    if (entry.isDirectory()) {
-      out += "/\n";
-      listDirectory(entry, indent + 1, out);
-    } else {
-      // files have sizes, directories do not
-      out += "\t\t";
-      out += entry.size();
-      out += "\n";
-    }
-  }
-  dir.close();
-}
-
-// Save persistent data to SD card
-void saveParams() {
-  File f = SD.open("P.TXT", FILE_REWRITE);
-  if (f) {
-    String s;
-    outParams(s);
-    f.print(s);
-    f.close();
-    dlogn("Saved parameters");
-  }
-  else dlogn("Couldn't write parameters");
-}
-
-// Get persistent data from SD card
-void getParams() {
-  static char buf[1000];
-  File f = SD.open("P.TXT", FILE_READ);
-  if (f) {
-    f.read(buf, 1000);
-    String bb(buf);
-    dlogn(String("Parameters from file:") + bb);
-    updateParameters(bb);
-    f.close();
-  } else {
-    dlogn(String("No saved parameters - using defaults"));
-  }
-}
-
-
-// WiFi server
-void serveClient(WiFiClient& client)
-{
-  String request;
-  String content;
-  getRequestFromClient(client, request, content);
-  if (content.length() > 0 && (request.indexOf(" /upd ") > 0 || request.indexOf("POST / ") >= 0)) {
-    respondParameterUpdate(client, request, content);
-  }
-  else if (request.indexOf("favicon.ico") > 0) respondIcon(client, request, content);
-  else if (request.indexOf(" / ") > 0) respondT(client, request, content);
-  else if (request.indexOf(" /service?") > 0) {
-    setOffOrOn(request);
-    respondT(client, request, content);
-  }
-  else respond(client, request, content);
-  delay(1);
-  client.flush();
-  client.stop();
-  clogn("Disconnected");
-  if (request.indexOf(" /reboot") > 0) softReboot();
-}
-
-// Set on or off immediately for service purposes
-void setOffOrOn (String request) {
-  serviceOff = false;
-  serviceOn = 0;
-  if (request.indexOf("?set=off ") > 0) serviceOff = true;
-  else if (request.indexOf("?set=on ") > 0) serviceOn = millis() + 30 * 60 * 1000;
-  schedMinute = 0; // do it now
-  recentLux = 0; // light up screen
-}
-
-void adjustTargetTemp(float t) {
-  if (t > 8.0 && t < 30)
-  {
-    targetTemp = t;
-    saveParams();       // persist to disc
-    gotWeather = false; // force recalc with new parameters
-    schedMinute = 0;    // do it now
-  }
-}
-
-void respondParameterUpdate(WiFiClient& client, String &request, String &content) {
-  updateParameters(content);
-  saveParams();       // persist to disc
-  gotWeather = false; // force recalc with new parameters
+void doItNow () {
   schedMinute = 0;    // do it now
   recentLux = 0;      // light up screen
-
-  //client.println("HTTP/1.1 303 See other");
-  //client.println("Location: /");
-  //client.println("");
-  client.println("HTTP/1.1 200 OK");
-  client.println("");
-  client.println("<!DOCTYPE HTML>");
-  client.println("<html><head><meta http-equiv=\"refresh\" content=\"10;URL='/'\"/></head><body>Updating...</body></html>");
+  gotWeather = false; // force recalc with new parameters
 }
 
-bool saveTemplate(String &content) {
-  int start = content.indexOf("=");
-  if (start < 0) return false;
-  File f = SD.open("TEMPLATE.HTM", FILE_REWRITE);
-  if (!f) return false;
-  f.write(content.c_str() + start + 1);
-  f.close();
-  return true;
-}
 
-void getRequestFromClient(WiFiClient& client, String &request, String &content) {
-  boolean currentLineIsBlank = true;
-  int contentLength = 0;
-  bool readingContent = false;
-  int timeout = 2000;
-  while (client.connected()) {
-    if (client.available()) {
-      char c = client.read();
-      if (readingContent) {
-        content += c;
-        if (--contentLength <= 0) break;
-      }
-      else {
-        request += c;
-        // Blank line terminates header:
-        if (c == '\n' && currentLineIsBlank) {
-          // parse request
-          int ix = request.indexOf("Content-Length:");
-          if (ix >= 0) {
-            contentLength = request.substring(ix + 15).toInt();
-            clogn(String("content ") + contentLength);
-          }
-          if (contentLength == 0) break;
-          else readingContent = true;
-        }
-        if (c == '\n') {
-          // starting a new line
-          currentLineIsBlank = true;
-        }
-        else if (c != '\r') {
-          currentLineIsBlank = false;
-        }
-      }
-    }
-    else
-    {
-      delay(1);
-      if (--timeout <= 0) {
-        clogn("timeout");
-        break;
-      }
-    }
-  }
-  while (client.available()) client.read();
-  decode(content);
-  clogn(request);
-  clogn(content);
-}
 
 
 void updateParameters(String& content) {
@@ -538,9 +354,9 @@ void updateParameters(String& content) {
   String lud = getProp(content, "vacation", 1, 10000);
   lud.trim();
   if (lud.length() == 10) lud = lud.substring(2); // want two-digit year
-  if (lud.length() == 0) lowUntilDate = "";
+  if (lud.length() == 0) heating.lowUntilDate = "";
   else if (lud.length() == 8 && lud.charAt(2) == '-' && lud.charAt(5) == '-') {
-    lowUntilDate = lud;
+    heating.lowUntilDate = lud;
     //checkLowUntil(); // cancel if already past // don't save params while open for reading!
   }
   getFProp(content, "factor", 0.01, 10.0, minsPerDegreePerHour);
@@ -572,224 +388,35 @@ void getFProp(String &msg, String propName, float minf, float maxf, float & prop
   }
 }
 
-// Web page icon is a single block of colour. The three bytes last-8..6 are the icon colour. K==0, J==255.
-char* icoCode = (char *)"KKLKLKLLKKLKcK{KKKaKKKsKKKLKKKMKKKLKcKKKKKKKKKKKKKKKKKKKKKKKKKzJzKKKKK";
-byte icobytes [70];
-void respondIcon (WiFiClient& client, String& req, String& content)
-{
-  client.println("HTTP/1.1 200 OK");
-  client.println("Content-Type: image/x-icon");
-  client.println("Content-Length: 70");
-  client.println("Connection: close");  // the connection will be closed after completion of the response
-  client.println();
-  for (int i = 0; i < 70; i++) {
-    icobytes[i] = icoCode[i] - 75;
-  }
-  client.write(icobytes, 70);
-  client.flush();
-}
 
-int unhex(char c) {
-  return c < 'A' ? c - '0' : c - 'A' + 10;
-}
-
-void decode(String &m) {
-  char b[m.length() + 1];
-  int mi = 0;
-  for (int i = 0; i < m.length(); ) {
-    if (i < m.length() - 2 && m[i] == '%') {
-      char c = (char)(unhex(m[i + 1]) * 16 + unhex(m[i + 2]));
-      b[mi++] = c;
-      i += 3;
-    } else if (m[i] == '+' || (unsigned)m[i] < 32) {
-      b[mi++] = ' ';
-    } else {
-      b[mi++] = m[i++];
-    }
-  }
-  b[mi] = '\0';
-  m = String(b);
-  // clogn(String("DECODE: ") + m);
-}
-
-// Create a web page by substituting static var values into a template file.
-// Current parameters are: {%temp} {%factor} {%vacation}
-// Template file is template.htm
-void respondT(WiFiClient& client, String& req, String& content) {
-  const int maxParamNameLength = 20;
-  client.println("HTTP/1.1 200 OK");
-  client.println("Content-Type: text/html");
-  client.println("Connection: close");
-  client.println();
-
-  const int bufsize = 1000; // Max block size
-  char buf [bufsize];
-  int offset = 0; // Start point for reading next block. Nearly always 0.
-  File templateFile = SD.open("TEMPLATE.HTM", FILE_READ);
-  clog("Template");
-  // Copy to client in blocks:
-  while (templateFile.available()) {
-    clog(":");
-    // Read a block into the buffer:
-    // Offset > 0 iff a chunk of parameter has been carried over from previous block.
-    int length = templateFile.read(buf + offset, bufsize - 1 - offset);
-    offset = 0;
-
-
-    int ix = 0, // We've copied to output up to this point.
-        pbx = 0,  // Start of a parameter: {%
-        pex = 0;  // End of parameter: }
-    while (ix < length) {
-      clog(";");
-      pbx = findParameter(buf, ix, length);
-      if (pbx >= 0) {
-        // Find the end of the parameter, or end of block, or give up as too long:
-        for (pex = pbx + 1; buf[pex] != '}' && pex < length && pex < pbx + maxParamNameLength; pex++);
-        if (buf[pex] != '}') {
-          if (pex < length) {
-            // Error: unterminated flag. Ignore parameter and continue as usual.
-            client.write(buf + ix, pex - ix);
-            ix = pex;
-            clog("!");
-          } else {
-            // Parameter crosses buffer boundary. Process it in next block.
-            // Write out buffer up to parameter:
-            client.write(buf + ix, pbx - ix);
-            ix = length; // End of block
-            // Copy the fragment of the parameter to the start of the buffer:
-            for (int tx = 0, fx = pbx; fx < length; tx++, fx++) buf[tx] = buf[fx];
-            // Read in the next block after the copied fragment:
-            offset = pex - pbx;
-            clog("~");
-          }
-        }
-        else {
-          // Found parameter.
-          // Copy up to start of parameter:
-          client.write(buf + ix, pbx - ix);
-
-          // Read parameter name and print its value:
-          buf[pex] = '\0'; // End-of-string flag overwrites '}'
-          String paramName ((char*)(buf + pbx + 2)); //
-          clog (String("") + paramName);
-          String value = paramName.equalsIgnoreCase("temp") ? String(targetTemp, 1) :
-                         paramName.equalsIgnoreCase("factor") ? String(minsPerDegreePerHour) :
-                         paramName.equalsIgnoreCase("vacation") ? lowUntilDate :
-                         paramName.equalsIgnoreCase("serviceState") ? String(serviceOff ? "SERVICE OFF" : serviceOn > 0 ? "SERVICE ON" : "") :
-                         paramName.equalsIgnoreCase("params") ? outParams() :
-                         "????";
-          client.print(value);
-          clog(String("=") + value);
-
-          // Continue processing from end of parameter:
-          ix = pex + 1;
-        }
-      }
-      else {
-        // No further parameters. Copy rest of buffer:
-        client.write(buf + ix, length - ix);
-        ix = length; // End of block
-      }
-    }
-  }
-  templateFile.close();
-  client.flush();
-  clogn("#");
-}
-
-int findParameter(char *buf, int start, int end) {
-  for (int ix = start; ix < end; ix++) {
-    if (buf[ix] == '{' && buf[ix + 1] == '%') return ix;
-  }
-  return -1;
-}
-
-void logPage(WiFiClient& client, const String& logfile = "LOG.TXT") {
-  char buf [1000];
-  client.println("<a href='/'>Home</a><pre>");
-  File f = SD.open(logfile);
+// Save persistent data to SD card
+void saveParams() {
+  File f = SD.open("P.TXT", FILE_REWRITE);
   if (f) {
-    while (f.available()) {
-      size_t cc = f.read(buf, 1000);
-      client.write(buf, cc);
-    }
+    String s;
+    outParams(s);
+    f.print(s);
     f.close();
+    dlogn("Saved parameters");
   }
-  else client.println("Can't open log file");
-  client.println("</pre><a href='/'>Home</a><br/><br/><a href='/delete'>Delete log</a><br/><br/><a href='/reboot'>Reboot</a>");
+  else dlogn("Couldn't write parameters");
 }
 
-void deleteLogPage(WiFiClient& client, const String& logfile = "LOG.TXT") {
-  File f = SD.open(logfile, FILE_REWRITE);
+// Get persistent data from SD card
+void getParams() {
+  static char buf[1000];
+  File f = SD.open("P.TXT", FILE_READ);
   if (f) {
-    f.println("");
+    f.read(buf, 1000);
+    String bb(buf);
+    dlogn(String("Parameters from file:") + bb);
+    updateParameters(bb);
     f.close();
-    client.println("<p>Deleted log page</p>");
   } else {
-    client.println("<p>Couldn't delete log page</p>");
-  }
-  client.println("<a href='/'>Home</a><br/>");
-}
-
-void respond(WiFiClient& client, String& req, String& content) {
-  // send a standard http response header
-  client.println("HTTP/1.1 200 OK");
-  client.println("Content-Type: text/html");
-  client.println("Connection: close");    // xxxx keep-alive?
-  client.println();
-  client.println("<!DOCTYPE HTML>");
-  client.println("<html><body>");
-  if (req.indexOf(" /log") > 0) {
-    logPage(client);
-  } if (req.indexOf(" /temps") > 0) {
-    logPage(client, "TEMPERATURES.TXT");
-  } else if (req.indexOf(" /delete") > 0) {
-    deleteLogPage(client);
-    deleteLogPage(client, "TEMPERATURES.TXT");
-  } else if (req.indexOf(" /reboot") > 0) {
-    client.println("<b>Rebooting</b>");
-  } else if (req.indexOf("POST /template") >= 0) {
-    if (saveTemplate(content)) client.println("Template saved");
-    else client.println("Couldn't save template");
-  } else if (req.indexOf("GET /template") >= 0) {
-    client.println("<form method='POST'><textarea name='x'></textarea><input type='submit'/></form>");
-  } else {
-    statusPage(client, req.indexOf(" /upd") > 0); // GET or POST but not Referer
-  }
-  client.println("</body></html>");
-}
-
-
-
-void statusPage(WiFiClient& client, bool isUpd) {
-  client.println("<pre>");
-  String body = timeString() + "   " + (serviceOff ? "SERVICE OFF  " : serviceOn > 0 ? "SERVICE ON  " : "")
-                + (heating.isHeatingOn ? "ON" : "OFF") + "\n\n\n"
-                + "Weather:\n\n" + weather.weatherReport()
-                + "\nAvg Deficit: " + String(avgDeficit, 2)
-                + "\n\n\nTides:\n\n" + tidal.tidesReport() + "\n\n";
-  body += heating.periodsReport();
-  /*body += "\n\nParameters\n";
-    outParams(body);*/
-  body += "\n\nFiles\n";
-  listDirectory(SD.open("/"), 0, body);
-  //body += "\n\nRemote address: " + remoteAddress;
-
-  for (int ix = 0; ix < body.length(); ix += 1000)
-  {
-    client.println(body.substring(ix, min(ix + 1000, body.length())));
-  }
-  client.println("</pre>");
-  if (isUpd) {
-    client.println("Parameters: <form action='upd' method='post'><textarea name='p' rows='8' cols='70'>");
-    String outp; outParams(outp); client.println(outp);
-    client.println("</textarea><input type='submit' value='Update'/></form>");
-    client.println("<a href='/'>Close</a>");
-  }
-  else {
-    client.println("<a href='/upd'>Change parameters</a>&nbsp;&nbsp;&nbsp;<a href='/log'>Log</a>");
+    dlogn(String("No saved parameters - using defaults"));
   }
 }
+
 
 void outParams (String&msg) {
   msg += outParams();
@@ -799,7 +426,7 @@ String outParams() {
   String t = String("{'target':%0,'vacation':'%1','factor':%2,'skew':%3,'updateHour':%4,'lowHoursPerDay':%5,'windSpeedFactor':%6,'profile':[%7]}");
   t.replace('\'', '"');
   t.replace("%0", String(targetTemp, 1));
-  t.replace("%1", lowUntilDate);
+  t.replace("%1", heating.lowUntilDate);
   t.replace("%2", String(minsPerDegreePerHour, 2));
   t.replace("%3", String(avgFactor, 2));
   t.replace("%4", String(updateHour));
@@ -1014,18 +641,18 @@ void webIndicator(bool onOrOff)
 
 // Have we set the heating low until a specified date?
 bool checkLowUntil () {
-  if (lowUntilDate.length() > 0) {
-    long ludY = lowUntilDate.substring(0, 2).toInt();
-    long ludM = lowUntilDate.substring(3, 5).toInt();
-    long ludD = lowUntilDate.substring(6).toInt();
+  if (heating.lowUntilDate.length() > 0) {
+    long ludY = heating.lowUntilDate.substring(0, 2).toInt();
+    long ludM = heating.lowUntilDate.substring(3, 5).toInt();
+    long ludD = heating.lowUntilDate.substring(6).toInt();
     long rtcYMD = rtc.getYear() * 10000 + rtc.getMonth() * 100 + rtc.getDay();
     if (rtcYMD >= ludY * 10000 + ludM * 100 + ludD)  {
-      lowUntilDate = "";
+      heating.lowUntilDate = "";
       dlogn("Cancelled vacation");
       saveParams();
     }
   }
-  return lowUntilDate.length() > 0;
+  return heating.lowUntilDate.length() > 0;
 }
 
 
@@ -1093,9 +720,7 @@ bool connectWiFi ()
     if (WiFi.status() == WL_CONNECTED) {
       clogn(String(":) ") + wifiSSID[wifiSelected]);
       connectFailStart = 0;
-      if (server.status() == 0) {
-        server.begin();
-      }
+      webService.start();
     }
     else {
       clogn(":(");
