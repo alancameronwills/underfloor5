@@ -63,7 +63,6 @@
 #include "screen.h"
 #include "webservice.h"
 #include "parameters.h"
-#include <Arduino_MKRENV.h> // https://docs.arduino.cc/hardware/mkr-env-shield 
 #include <Sodaq_wdt.h>  // watchdog
 #include <utility/wifi_drv.h> // for indicator lamp WiFiDrv
 
@@ -126,8 +125,6 @@ void setup() {
   backlight.setup();
   heating.setup();
   screen.start();
-
-  ENV.begin(); // https://docs.arduino.cc/hardware/mkr-env-shield
 
   // Are we running the real thing or the prototype?
   byte mac[6];
