@@ -4,6 +4,7 @@
 #include "inside.h"
 #include "outside.h"
 
+#include <utility/wifi_drv.h> // for indicator lamp WiFiDrv
 #include <RTCZero.h>
 #include <Sodaq_wdt.h>  // watchdog
 
@@ -18,13 +19,13 @@ extern Tidal tidal;
 extern Weather weather;
 extern Temperatures temperatures;
 extern Heating heating;
-extern bool isProtoBoard;
 extern RTCZero rtc;
 
 
 extern float targetTemp;
 extern float avgDeficit;
 extern bool logging;
+extern bool debugging;
 
 
 extern float hourlyWeights[];
@@ -38,6 +39,16 @@ void doItNow();
 void softReboot();
 void saveParams();
 void updateParameters(String& content);
+
+void WebService::start() {
+  if (server.status() == 0) {
+    server.begin();
+    WiFiDrv::pinMode(25, OUTPUT); //onboard LED green
+    WiFiDrv::pinMode(26, OUTPUT); //onboard LED red
+    WiFiDrv::pinMode(27, OUTPUT); //onboard LED blue
+  }
+}
+
 
 // WiFi server
 
@@ -412,7 +423,7 @@ bool WebService::connectWiFi ()
       return false;
     }
     clog("Connecting");
-    if (!isProtoBoard) WiFi.setHostname("heating.local");
+    WiFi.setHostname("heating.local");
     for (int tryCount = 0; tryCount < 3 && WiFi.status() != WL_CONNECTED; tryCount++) {
       WiFi.begin(wifiSSID[wifiSelected].c_str(), "egg2hell");
       int count = 20;
@@ -454,7 +465,7 @@ bool WebService::connectWiFi ()
 */
 
 bool WebService::checkReconnect() {
-  if (logging || isProtoBoard) return true;
+  if (logging || debugging) return true;
   bool goAhead = true;
   int nowMinutes = rtc.getHours() * 60 + rtc.getMinutes();
   if (embargoUntil >= 0) {
@@ -505,4 +516,9 @@ bool WebService::checkReconnect() {
     ff.close();
   }
   return goAhead;
+}
+
+String WebService::ipString(const char *c) {
+  IPAddress ip = WiFi.localIP();
+  return String(c) + ip[0] + "." + ip[1] + "." + ip[2] + "." + ip[3];
 }

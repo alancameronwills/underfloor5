@@ -172,6 +172,7 @@ class Backlight {
     void loop(unsigned long m) ;
     void on(bool on) {
       isBacklightOn = on;
+      backlightWentOn = millis();
       digitalWrite(BACKLIGHT, on ? LOW : HIGH);
     }
 };

@@ -1,11 +1,13 @@
 #include "webclient.h"
 #include "webservice.h"
 #include "parameters.h"
+#include "utility.h"
+#include <RTCZero.h>    // clock
 
 #include <Sodaq_wdt.h>  // watchdog
 
 extern WebService webservice;
-extern bool isProtoBoard;
+extern RTCZero rtc;
 
 bool sendWebReq (WiFiClient &client, char* host, int port, String request, String extraLine) {
   if (WiFi.status() != WL_CONNECTED) {
@@ -108,4 +110,42 @@ bool getWeb(char* host, int port, String request, String extraLine, String& resp
 bool getWeb(char* host, int port, String request, String extraLine, String& response) {
   WiFiClient client;
   return getWeb(host, port, request, extraLine, response, client);
+}
+
+
+
+void setTimeFromWiFi()
+{
+  if (WiFi.status() != WL_CONNECTED) return;
+  rtc.begin();
+  unsigned long timeInSeconds = 0;
+  for (int tries = 0; tries < 20; tries++)
+  {
+    timeInSeconds = WiFi.getTime();
+    if (timeInSeconds > 0) break;
+    delay(500);
+    digitalWrite(6, HIGH);
+    delay(500);
+    digitalWrite(6, LOW);
+    sodaq_wdt_reset();
+  }
+  if (timeInSeconds > 0) {
+    rtc.setEpoch(timeInSeconds);
+    if (isSummertime())
+    {
+      rtc.setEpoch(timeInSeconds + 3600);
+    }
+    clogn("Got time");
+  }
+  else dlogn ("Failed to get time");
+}
+
+// Remind router we're here
+void pingConx() {
+  if (webservice.connectWiFi()) {
+    clog("ping ");
+    unsigned long m = millis();
+    WiFi.ping("google.co.uk");
+    clogn(String(millis() - m));
+  }
 }

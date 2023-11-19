@@ -65,9 +65,9 @@
 #include "webclient.h"
 #include "parameters.h"
 #include <Sodaq_wdt.h>  // watchdog
-#include <utility/wifi_drv.h> // for indicator lamp WiFiDrv
 
-// Parameter default values, overridden by setup read from P file
+
+bool debugging = true;
 
 bool logging = true;
 
@@ -95,9 +95,6 @@ bool periodsValid = false;    // Periods have been set since reboot
 bool truncatedLog;            // Done the truncation this 12-hour
 bool clocked = false;         // Done the 12-hourly update, don't do again this hour
 float avgDeficit = -200.0;    // Average outside temp - target. Invalid <100.
-// String remoteAddress;         // External address of house network from ping
-bool isProtoBoard = false;    // False -> this is the real device; don't set web name.
-
 
 
 // ENTRY: Initialization
@@ -115,6 +112,7 @@ void setup() {
   backlight.setup();
   heating.setup();
   screen.start();
+  webservice.start();
 
 
   transferRecentLog();
@@ -212,8 +210,8 @@ bool tryGetWeather() {
   showStatus("Connecting...");
   if (webservice.connectWiFi())
   {
-    dlogn(ipString("IP "));
-    showStatus(ipString("IP "));
+    dlogn(webservice.ipString("IP "));
+    showStatus(webservice.ipString("IP "));
     setTimeFromWiFi();
     if (weather.getWeather())
     {
@@ -254,20 +252,6 @@ void doItNow () {
 
 
 
-// Remind router we're here
-void pingConx() {
-  if (webservice.connectWiFi()) {
-    clog("ping ");
-    unsigned long m = millis();
-    WiFi.ping("google.co.uk");
-    clogn(String(millis() - m));
-  }
-}
-
-String ipString(const char *c) {
-  IPAddress ip = WiFi.localIP();
-  return String(c) + ip[0] + "." + ip[1] + "." + ip[2] + "." + ip[3];
-}
 
 
 
@@ -323,38 +307,6 @@ void setPeriodsFromDate()
   float avgTempDiff = targetTemp - 6.0;
   if (rtc.getYear() > 10) avgTempDiff = targetTemp - statsMean[rtc.getMonth() - 1];
   heating.setPeriods(avgTempDiff);
-}
-
-/*
-   WiFi
-
-*/
-
-
-void setTimeFromWiFi()
-{
-  if (WiFi.status() != WL_CONNECTED) return;
-  rtc.begin();
-  unsigned long timeInSeconds = 0;
-  for (int tries = 0; tries < 20; tries++)
-  {
-    timeInSeconds = WiFi.getTime();
-    if (timeInSeconds > 0) break;
-    delay(500);
-    digitalWrite(6, HIGH);
-    delay(500);
-    digitalWrite(6, LOW);
-    sodaq_wdt_reset();
-  }
-  if (timeInSeconds > 0) {
-    rtc.setEpoch(timeInSeconds);
-    if (isSummertime())
-    {
-      rtc.setEpoch(timeInSeconds + 3600);
-    }
-    clogn("Got time");
-  }
-  else dlogn ("Failed to get time");
 }
 
 

@@ -3,14 +3,11 @@
 #include "logger.h"
 #include "utility.h"
 #include "webclient.h"
+#include "parameters.h"
 
 extern float avgDeficit;
-extern float targetTemp;
-extern float windSpeedFactor;
-extern float avgFactor;
 extern bool logging;
 extern RTCZero rtc;
-
 
 /*
    Weather

@@ -18,11 +18,7 @@ class WebService {
   public:
     WebService() : server(80) {}
     bool connectWiFi ();
-    void start() {
-      if (server.status() == 0) {
-        server.begin();
-      }
-    }
+    void start() ;
     void loop () {
       WiFiClient sclient = server.available();
       if (sclient) {
@@ -30,6 +26,13 @@ class WebService {
         serveClient(sclient);
       }
     }
+    String macAddress() {
+      byte mac[6];
+      WiFi.macAddress(mac);
+      return String("") + mac[0];
+    }
+
+    String ipString(const char *c);
 };
 
 #endif

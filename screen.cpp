@@ -3,18 +3,18 @@
 #include "logger.h"
 #include "outside.h"
 #include "inside.h"
+#include "webservice.h"
 #include <RTCZero.h>    // clock
-
-
 
 extern Tidal tidal;
 extern Weather weather;
 extern Temperatures temperatures;
 extern Heating heating;
+extern Backlight backlight;
+extern WebService webservice;
 extern RTCZero rtc;
 
 extern float targetTemp;
-String ipString(const char *c);
 
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 
@@ -34,6 +34,7 @@ bool Screen::IsTouched(TS_Point &p) {
   else {
     clogn(String("x ") + p.x + " y " + p.y);
     tone(BEEPER, 1000, 500);
+    backlight.on(true);
     return true;
   }
   return false;
@@ -74,7 +75,7 @@ void Page::drawStatus () {
 }
 
 void showIP() {
-  showStatus(ipString("") + " " + (heating.isHeatingOn ? "ON" : "OFF"));
+  showStatus(webservice.ipString("") + " " + (heating.isHeatingOn ? "ON" : "OFF"));
 }
 
 void MainPage::drawHeatingPlan()
@@ -367,18 +368,18 @@ void Backlight::loop(unsigned long m)
   if (abs(recentLux - lux) > backlightSensitivity && blinker == 0)
   {
     clogn(String("BL ") + recentLux + "  " + lux);
-    if (!isBacklightOn) backlightWentOn = m;
+    if (!isBacklightOn) on(true);
     else showIP();
   }
   recentLux = lux;
   if (blinker > 0) blinker--;
-  if (((long)(m - backlightWentOn - backlightTimeout) > 0) == isBacklightOn) {
-    on(!isBacklightOn);
+  if (isBacklightOn && ((long)(m - backlightWentOn - backlightTimeout) > 0)) {
+    on(false);
     blinker = 2; // suppress response to own change
   }
 #else
   if (!isBacklightOn) {
-    backlight.on(true);
+    on(true);
   }
 #endif
 }

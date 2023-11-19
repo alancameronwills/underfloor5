@@ -2,12 +2,9 @@
 #include "utility.h"
 #include <RTCZero.h>
 #include "logger.h"
+#include "parameters.h"
 
-
-extern float hourlyWeights[];
-extern float minsPerDegreePerHour;
 extern float checkLowUntil ();
-extern float lowHoursPerDay;
 extern RTCZero rtc;
 
 float cosMonth[12] = {1.0, 0.7, 0.25, -0.2, -0.7, -1.0, -1.0, -0.7, -0.2, 0.25, 0.7, 1.0};
