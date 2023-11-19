@@ -8,6 +8,7 @@ extern float hourlyWeights[];
 extern float minsPerDegreePerHour;
 extern float checkLowUntil ();
 extern float lowHoursPerDay;
+extern RTCZero rtc;
 
 float cosMonth[12] = {1.0, 0.7, 0.25, -0.2, -0.7, -1.0, -1.0, -0.7, -0.2, 0.25, 0.7, 1.0};
 float insolationFactor = 0.4; // varies minsPerDegreePerHour from 0.4 to 1.2, winter to summer

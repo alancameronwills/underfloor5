@@ -62,6 +62,7 @@
 #include "inside.h"     // Temperatures, Heating
 #include "screen.h"
 #include "webservice.h"
+#include "webclient.h"
 #include "parameters.h"
 #include <Sodaq_wdt.h>  // watchdog
 #include <utility/wifi_drv.h> // for indicator lamp WiFiDrv
@@ -105,49 +106,16 @@ void setup() {
   // Disable watchdog - may still be running after reset:
   sodaq_wdt_disable();
 
-  
-  pinMode(6, OUTPUT); // LED
-  digitalWrite(6, LOW);
-  WiFiDrv::pinMode(25, OUTPUT); //onboard LED green
-  WiFiDrv::pinMode(26, OUTPUT); //onboard LED red
-  WiFiDrv::pinMode(27, OUTPUT); //onboard LED blue
-
   gotWeather = false;
   clocked = false;
   periodsValid = false;
-
-  rtc.begin();
   
-  pinMode(SD_CS, OUTPUT);       // SD card chip select
-  digitalWrite(SD_CS, HIGH);
-  int sdOK = SD.begin(SD_CS);
-
+  rtc.begin();
+  sd_logger_start();
   backlight.setup();
   heating.setup();
   screen.start();
 
-  // Are we running the real thing or the prototype?
-  byte mac[6];
-  WiFi.macAddress(mac);
-  isProtoBoard = mac[0] != 0x50;
-
-  if (logging) {
-    Serial.begin(115200);
-    int count = 0;
-    while (!Serial) {
-      // wait for serial port to connect.
-      delay (100);
-      if (count++ > 20) {
-        logging = false;
-        break;
-      }
-    }
-  } else {
-    delay(500);
-  }
-
-  dlogn(String("=====Restart=====") + (isProtoBoard ? String(" Proto ") + mac[0] : ""));
-  if (!sdOK) dlogn("No SD card");
 
   transferRecentLog();
   getParams();

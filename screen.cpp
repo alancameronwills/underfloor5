@@ -3,6 +3,7 @@
 #include "logger.h"
 #include "outside.h"
 #include "inside.h"
+#include <RTCZero.h>    // clock
 
 
 
@@ -10,6 +11,7 @@ extern Tidal tidal;
 extern Weather weather;
 extern Temperatures temperatures;
 extern Heating heating;
+extern RTCZero rtc;
 
 extern float targetTemp;
 String ipString(const char *c);

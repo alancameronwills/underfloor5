@@ -9,6 +9,7 @@ extern float targetTemp;
 extern float windSpeedFactor;
 extern float avgFactor;
 extern bool logging;
+extern RTCZero rtc;
 
 
 /*

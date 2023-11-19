@@ -1,7 +1,12 @@
 #include "logger.h"
 
+#include <SPI.h>
+#include <SD.h>         // SD card for log and param files
+#include <RTCZero.h>    // clock
+
 extern bool logging;
 unsigned long maxLogSize = 1000000;
+extern RTCZero rtc;
 
 
 void copyFile(File fi, String toFile, bool overWrite) {
@@ -108,4 +113,33 @@ void rlog (String msg, const char* fileName) {
     ff.print(msg);
     ff.close();
   }
+}
+
+
+
+void sd_logger_start() {  
+  pinMode(6, OUTPUT); // LED
+  digitalWrite(6, LOW);
+  pinMode(SD_CS, OUTPUT);       // SD card chip select
+  digitalWrite(SD_CS, HIGH);
+  int sdOK = SD.begin(SD_CS);
+  if (logging) {
+    Serial.begin(115200);
+    int count = 0;
+    while (!Serial) {
+      // wait for serial port to connect.
+      delay (100);
+      if (count++ > 20) {
+        logging = false;
+        break;
+      }
+    }
+  } else {
+    delay(500);
+  }
+
+  dlogn(String("=====Restart====="));
+  if (!sdOK) dlogn("No SD card");
+
+  transferRecentLog();
 }

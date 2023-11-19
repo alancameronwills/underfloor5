@@ -2,17 +2,16 @@
 #define UF_logger
 
 #include <Arduino.h>
+#include <SD.h>  
 
-#include <SPI.h>
-#include <SD.h>         // SD card for log and param files
-#include <RTCZero.h>    // clock
 
 // SD card
 #define SD_CS   4 //   SDCARD_SS_PIN   // SD card chip select pin
 #define FILE_REWRITE (O_WRITE | O_CREAT | O_TRUNC)
 
 
-extern RTCZero rtc;
+
+void sd_logger_start();
 
 void copyFile(File fi, String toFile, bool overWrite);
 void copyFile(String fromFile, String toFile, bool overWrite);

@@ -19,6 +19,7 @@ extern Weather weather;
 extern Temperatures temperatures;
 extern Heating heating;
 extern bool isProtoBoard;
+extern RTCZero rtc;
 
 
 extern float targetTemp;
