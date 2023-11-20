@@ -3,40 +3,13 @@
 
 
 #include <Arduino.h>
-
-#include "Adafruit_GFX.h"       // Graphics https://github.com/adafruit/Adafruit-GFX-Library
 #include "Adafruit_ILI9341.h"   // Screen https://github.com/adafruit/Adafruit_ILI9341/
 #include "XPT2046_Touchscreen.h"
-#include <Fonts/FreeSansBold9pt7b.h>
 
-
-/*__Pin definitions for the TFT display */
-#define TFT_CS   A3
-#define TFT_DC   0
-#define TFT_MOSI 8
-//#define TFT_RST  22
-#define TFT_CLK  9
-#define TFT_MISO 10
-#define BACKLIGHT  A2
-
-#define BEEPER 2
-
-#define TOUCH_CS A4
-#define TOUCH_IRQ 1
-
-/*____ Touchscreen parameters_____*/
-#define MINPRESSURE 5      // minimum required force for touch event
-#define TS_MINX 370
-#define TS_MINY 470
-#define TS_MAXX 3700
-#define TS_MAXY 3600
-/*___________________________*/
-
-
-#define TIDE_COLOR 65520 // orange (red[0..31]<<11) + (green[0..63]<<5) + blue[0..31]
 
 
 void showIP();
+void showStatus(String s);
 
 extern Adafruit_ILI9341 tft;
 class PageController {
@@ -115,26 +88,9 @@ class Screen : PageController {
       redraw();
     }
   public:
-    Screen(void (*controlCompleteAction)(float)) : touchScreen(TOUCH_CS) {
-      controlPage = new ControlPage(this, controlCompleteAction);
-    }
-    void start() {
-      pinMode(TFT_CS, OUTPUT);    // screen chip select
-      digitalWrite(TFT_CS, HIGH);
-      tft.begin();
-      touchScreen.begin();
-      switchPage(startupPage);
-    }
-    void loop() {
-      TS_Point touchPoint;
-      if (IsTouched(/*out*/touchPoint)) {
-        currentPage->handleTouch(touchPoint);
-      }
-      if (screenTimeout > 0 && millis() > screenTimeout) {
-        screenTimeout = 0;
-        switchPage(mainPage);
-      }
-    }
+    Screen(void (*controlCompleteAction)(float));
+    void start() ;
+    void loop() ;
     void setTimeout(long ms) {
       if (ms == 0) screenTimeout = 0;
       else screenTimeout = millis() + ms;
@@ -153,9 +109,6 @@ class Screen : PageController {
     }
 };
 
-
-#define LDR_PIN A5
-
 class Backlight {
     const unsigned long backlightTimeout = 120 * 1000L; // ms
     const int backlightSensitivity = 12; // 3..20
@@ -165,37 +118,9 @@ class Backlight {
     int skip = 0;
     int blinker = 0;
   public:
-    void setup() {
-      pinMode(BACKLIGHT, OUTPUT);     // screen Backlight
-      on(true);
-    }
+    void setup() ;
     void loop(unsigned long m) ;
-    void on(bool on) {
-      isBacklightOn = on;
-      backlightWentOn = millis();
-      digitalWrite(BACKLIGHT, on ? LOW : HIGH);
-    }
+    void on(bool on);
 };
-
-
-
-void show(int x, int y, String text);
-
-
-/// Draw vertical gradient across width of screen. 5-6-5 color: r:{0..31},g:{0..63},b:{0..31}
-void vgrade(float rFrom, float gFrom, float bFrom, float rTo, float gTo, float bTo, int yFrom, int yTo);
-
-
-unsigned rgb(byte r, byte g, byte b);
-
-
-
-void drawTempBars() ;
-void drawWindArrow(int day, String dirn);
-void drawTempBar(int xv, float t, float rain, float wind);
-void drawTempGraphBg(int firstDay);
-
-
-void showStatus(String s);
 
 #endif

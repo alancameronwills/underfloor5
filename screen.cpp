@@ -6,6 +6,9 @@
 #include "webservice.h"
 #include <RTCZero.h>    // clock
 
+#include "Adafruit_GFX.h"       // Graphics https://github.com/adafruit/Adafruit-GFX-Library
+#include <Fonts/FreeSansBold9pt7b.h>
+
 extern Tidal tidal;
 extern Weather weather;
 extern Temperatures temperatures;
@@ -15,6 +18,38 @@ extern WebService webservice;
 extern RTCZero rtc;
 
 extern float targetTemp;
+
+/*__Pin definitions for the TFT display */
+#define TFT_CS   A3
+#define TFT_DC   0
+#define TFT_MOSI 8
+//#define TFT_RST  22
+#define TFT_CLK  9
+#define TFT_MISO 10
+#define BACKLIGHT  A2
+
+#define BEEPER 2
+
+#define TOUCH_CS A4
+#define TOUCH_IRQ 1
+
+
+
+#define LDR_PIN A5
+
+
+/*____ Touchscreen parameters_____*/
+#define MINPRESSURE 5      // minimum required force for touch event
+#define TS_MINX 370
+#define TS_MINY 470
+#define TS_MAXX 3700
+#define TS_MAXY 3600
+/*___________________________*/
+
+
+#define TIDE_COLOR 65520 // orange (red[0..31]<<11) + (green[0..63]<<5) + blue[0..31]
+
+
 
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 
@@ -50,6 +85,33 @@ const int dayWidth = 42;
 const int zeroAxis = 90;
 const int barWidth = 8;
 
+Screen::Screen(void (*controlCompleteAction)(float)) : touchScreen(TOUCH_CS) {
+  controlPage = new ControlPage(this, controlCompleteAction);
+}
+void Screen::start() {
+  pinMode(TFT_CS, OUTPUT);    // screen chip select
+  digitalWrite(TFT_CS, HIGH);
+  tft.begin();
+  touchScreen.begin();
+  switchPage(startupPage);
+}
+void Screen::loop() {
+  TS_Point touchPoint;
+  if (IsTouched(/*out*/touchPoint)) {
+    currentPage->handleTouch(touchPoint);
+  }
+  if (screenTimeout > 0 && millis() > screenTimeout) {
+    screenTimeout = 0;
+    switchPage(mainPage);
+  }
+}
+
+
+void show(int x, int y, String text)
+{
+  tft.setCursor(x, y);
+  tft.print(text);
+}
 
 
 void Page::drawNumberButton(float num, int y, unsigned int bg, unsigned int fg)
@@ -169,12 +231,6 @@ void MainPage::drawTides(int left, int base, int dx)
       yv -= yh * ddy; yh += yv * ddy;
     }
   }
-}
-
-void show(int x, int y, String text)
-{
-  tft.setCursor(x, y);
-  tft.print(text);
 }
 
 
@@ -358,6 +414,16 @@ void showStatus(String s) {
   show (4, 222, s);
 }
 
+void Backlight::setup () {
+  pinMode(BACKLIGHT, OUTPUT);     // screen Backlight
+  on(true);
+}
+
+void Backlight::on(bool on) {
+  isBacklightOn = on;
+  backlightWentOn = millis();
+  digitalWrite(BACKLIGHT, on ? LOW : HIGH);
+}
 
 void Backlight::loop(unsigned long m)
 {

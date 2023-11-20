@@ -3,7 +3,6 @@
    TODO:
    - If can't get weather, should use recent weather to recalc heating plan from latest target temp.
    - Can't get weather should not cause embargo if the failed connection was completed.
-  - Modularize
   - non-blocking file operations
   - checkLowUntil should schedule saveParams for next cycle, not do it immediately
 

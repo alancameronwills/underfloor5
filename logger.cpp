@@ -8,6 +8,7 @@ extern bool logging;
 unsigned long maxLogSize = 1000000;
 extern RTCZero rtc;
 
+#define SD_CS   4 //   SDCARD_SS_PIN   // SD card chip select pin
 
 void copyFile(File fi, String toFile, bool overWrite) {
   int buffersize = 3000;
