@@ -123,8 +123,6 @@ unsigned long schedMinute = 0;
 
 // ENTRY: run every 100ms
 void loop() {
-  TS_Point touch;
-
   clearRecentLog();
 
   // Once a minute
