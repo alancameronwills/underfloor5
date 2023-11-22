@@ -14,20 +14,55 @@ extern RTCZero rtc;
 
 */
 
-bool Weather::getWeather() {
-  String msg = "";
-  if (getWeatherForecast(msg) && parseWeather(msg)) {
-    avgDeficit = getForecastTempDiff(targetTemp);
+bool getWeatherCache(String &response) {
+  File weatherCache = SD.open("WEATHER.TXT", FILE_READ);
+  if (weatherCache) {
+    char buf [6000];
+    weatherCache.read(buf, 6000);
+    weatherCache.close();
+    String bb(buf);
+    long timestamp = bb.toInt();
+    long now = getWiFiTime();
+    if (now > timestamp && timestamp > 0 && now - timestamp < 36000 /*10h*/)
+    {
+      response = bb;
+      return true;
+    }
+  }
+  return false;
+}
+bool saveWeatherCache(String response) {
+  File weatherCache = SD.open("WEATHER.TXT", FILE_REWRITE);
+  if (weatherCache) {
+    weatherCache.println(getWiFiTime());
+    weatherCache.println(response);
+    weatherCache.close();
     return true;
   }
-  else return false;
+  return false;
 }
 
-bool Weather::getWeatherForecast(String& msg)
+bool Weather::getWeather() {
+  String response = "";
+  if (getWeatherCache(/*&*/response) && parseWeather(response)) {
+    dlogn("Got cached weather");
+  } else if (getWeatherForecast(/*&*/response) && parseWeather(response)) {
+    dlogn("Got weather");
+    saveWeatherCache(response);
+  } else return false;
+  avgDeficit = getForecastTempDiff(targetTemp);
+  return true;
+}
+
+/*
+
+   https://register.metoffice.gov.uk/MyAccountClient/account/view
+*/
+bool Weather::getWeatherForecast(String& response)
 {
   const char* requestedLocation = "353070";
-  const String weatherReq = String("/public/data/val/wxfcs/all/json/") + requestedLocation + "?res=daily&key=75eea32c-ec7b-499f-9d47-a1ab760bf8da";
-  return getWeb ((char*)"datapoint.metoffice.gov.uk", 80, weatherReq, "", msg);
+  const String weatherReq = String("/public/data/val/wxfcs/all/json/") + requestedLocation + "?res=daily&key=d8ebf147-4cd1-4824-aac9-635e600f9ba5";
+  return getWeb ((char*)"datapoint.metoffice.gov.uk", 80, weatherReq, "", /*&*/response);
 }
 
 
@@ -123,12 +158,12 @@ float Weather::getForecastTempDiff(float targetTemp) {
 
 
 String Weather::codes[30] =
-    { "stars", "sun", "cloud", "cloud", "", "mist", "fog", "Cloud", "ocast", "shwr", "shwr", "drizl",
-      "rain", "Shwr", "Shwr", "RAIN",
-      "sleet", "sleet", "Sleet", "hail", "hail",
-      "snow", "snow", "snow", "Snow", "Snow", "SNOW",
-      "thndr", "thndr", "Thndr"
-    };
+{ "stars", "sun", "cloud", "cloud", "", "mist", "fog", "Cloud", "ocast", "shwr", "shwr", "drizl",
+  "rain", "Shwr", "Shwr", "RAIN",
+  "sleet", "sleet", "Sleet", "hail", "hail",
+  "snow", "snow", "snow", "Snow", "Snow", "SNOW",
+  "thndr", "thndr", "Thndr"
+};
 
 
 /**** Tidal ********/

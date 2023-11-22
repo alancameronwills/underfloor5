@@ -30,9 +30,9 @@ class Heating {
 };
 
 class Temperatures {
-    long previousRecord = 0;
+    long previousRecord = 10000;
     float sumOverPeriod = 0;
-    int periodCount = 0;
+    long int periodCount = 0;
     Heating heating;
   public:
     Temperatures(Heating& _heating) {

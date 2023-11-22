@@ -121,12 +121,14 @@ extern Heating heating;
 void Temperatures:: record() {
   sumOverPeriod += getCurrent();
   periodCount++;
-  if (millis() > previousRecord + 600000) {
+  if (millis() > previousRecord + 600000 || millis() < previousRecord) {
+    clog("~");
     previousRecord = millis();
     if (periodCount > 0) {
       float avgTempOverPeriod = round(10 * sumOverPeriod / periodCount) / 10;
-      File f = SD.open("TEMPERATURES.TXT", FILE_REWRITE);
+      File f = SD.open("TEMPERAT.TXT", FILE_WRITE);
       if (f) {
+        clogn(String("Temp ") + avgTempOverPeriod);
         f.println(timeString() + " " + (heating.isHeatingOn ? 1 : 0) + " " + avgTempOverPeriod);
         f.close();
       }

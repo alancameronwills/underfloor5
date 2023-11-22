@@ -53,10 +53,14 @@ void truncateLog(const String& logfile) {
 }
 
 
-void clearFile(String fileName) {
+String clearFile(String fileName) {
   File f = SD.open(fileName, FILE_REWRITE);
   if (f) {
+    f.println("");
     f.close();
+    return String ("Emptied ") + fileName;
+  } else {
+    return String ("Couldn't open ") + fileName;
   }
 }
 String d2(int n)

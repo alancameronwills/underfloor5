@@ -84,20 +84,47 @@ void respondParameterUpdate(WiFiClient& client, String &request, String &content
   client.println("<html><head><meta http-equiv=\"refresh\" content=\"10;URL='/'\"/></head><body>Updating...</body></html>");
 }
 
-bool saveTemplate(String &content) {
-  int start = content.indexOf("=");
-  if (start < 0) return false;
-  File f = SD.open("TEMPLATE.HTM", FILE_REWRITE);
-  if (!f) return false;
-  f.write(content.c_str() + start + 1);
-  f.close();
-  return true;
-}
-
 
 int unhex(char c) {
   return c < 'A' ? c - '0' : c - 'A' + 10;
 }
+
+bool saveTemplate(WiFiClient &client, int contentLength) {
+  clog("save");
+  File f = SD.open("TEMPLATE.HTM", FILE_REWRITE);
+  if (!f) return false;
+  clog("~");
+  int count = 0;
+  char code[2];
+  int codeChar = 0;
+  bool started = false;
+  while (client.connected() && client.available() && count++ < contentLength) {
+    char c = client.read();
+    if(!started) {
+      if (c=='=') started = true;
+      continue;
+    }
+    
+    if (c == '%') {
+      codeChar = 1;
+    } else if (codeChar > 0) {
+      code[codeChar++ -1] = c;
+      if (codeChar>2) {
+        codeChar= 0;
+        c = (char)(unhex(code[0])*16 + unhex(code[1]));
+        f.write(c);
+      }
+    } else {
+      if (c=='+') c = ' ';
+      f.write(c);
+    }
+  }
+  f.close();
+  clogn("#");
+  return started;
+}
+
+
 
 void decode(String &m) {
   char b[m.length() + 1];
@@ -118,38 +145,47 @@ void decode(String &m) {
   // clogn(String("DECODE: ") + m);
 }
 
-void getRequestFromClient(WiFiClient& client, String &request, String &content) {
+/**
+   Use for short content blocks. Anything too big busts the variable memory.
+*/
+void getContentFromClient(WiFiClient &client, int lengthExpected, String &content) {
+  int count = 0;
+  while (client.connected() && client.available() && count++ < lengthExpected) {
+    content += (char)client.read();
+  }
+  decode(content);
+}
+
+/** Reads request header, leaves client open to read content
+   @param request out - request header
+   @returns length of content yet to be read
+*/
+int getRequestFromClient(WiFiClient& client, String &request) {
   boolean currentLineIsBlank = true;
   int contentLength = 0;
   bool readingContent = false;
-  int timeout = 2000;
+  int timeout = 500;
   while (client.connected()) {
     if (client.available()) {
       char c = client.read();
-      if (readingContent) {
-        content += c;
-        if (--contentLength <= 0) break;
+
+      request += c;
+      // Blank line terminates header:
+      if (c == '\n' && currentLineIsBlank) {
+        // parse request
+        int ix = request.indexOf("Content-Length:");
+        if (ix >= 0) {
+          contentLength = request.substring(ix + 15).toInt();
+          clogn(String("content ") + contentLength);
+        }
+        break;
       }
-      else {
-        request += c;
-        // Blank line terminates header:
-        if (c == '\n' && currentLineIsBlank) {
-          // parse request
-          int ix = request.indexOf("Content-Length:");
-          if (ix >= 0) {
-            contentLength = request.substring(ix + 15).toInt();
-            clogn(String("content ") + contentLength);
-          }
-          if (contentLength == 0) break;
-          else readingContent = true;
-        }
-        if (c == '\n') {
-          // starting a new line
-          currentLineIsBlank = true;
-        }
-        else if (c != '\r') {
-          currentLineIsBlank = false;
-        }
+      if (c == '\n') {
+        // starting a new line
+        currentLineIsBlank = true;
+      }
+      else if (c != '\r') {
+        currentLineIsBlank = false;
       }
     }
     else
@@ -161,17 +197,15 @@ void getRequestFromClient(WiFiClient& client, String &request, String &content) 
       }
     }
   }
-  while (client.available()) client.read();
-  decode(content);
+  clogn("#");
   clogn(request);
-  clogn(content);
 }
 
 
 // Web page icon is a single block of colour. The three bytes last-8..6 are the icon colour. K==0, J==255.
 char* icoCode = (char *)"KKLKLKLLKKLKcK{KKKaKKKsKKKLKKKMKKKLKcKKKKKKKKKKKKKKKKKKKKKKKKKzJzKKKKK";
 byte icobytes [70];
-void respondIcon (WiFiClient& client, String& req, String& content)
+void respondIcon (WiFiClient& client, String& req)
 {
   client.println("HTTP/1.1 200 OK");
   client.println("Content-Type: image/x-icon");
@@ -197,7 +231,7 @@ int findParameter(char *buf, int start, int end) {
 // Create a web page by substituting static var values into a template file.
 // Current parameters are: {%temp} {%factor} {%vacation}
 // Template file is template.htm
-void respondT(WiFiClient& client, String& req, String& content) {
+void respondT(WiFiClient& client, String& req) {
   const int maxParamNameLength = 20;
   client.println("HTTP/1.1 200 OK");
   client.println("Content-Type: text/html");
@@ -254,11 +288,12 @@ void respondT(WiFiClient& client, String& req, String& content) {
           buf[pex] = '\0'; // End-of-string flag overwrites '}'
           String paramName ((char*)(buf + pbx + 2)); //
           clog (String("") + paramName);
-          String value = paramName.equalsIgnoreCase("temp") ? String(targetTemp, 1) :
+          String value = paramName.equalsIgnoreCase("target") ? String(targetTemp, 1) :
                          paramName.equalsIgnoreCase("factor") ? String(minsPerDegreePerHour) :
                          paramName.equalsIgnoreCase("vacation") ? heating.lowUntilDate :
                          paramName.equalsIgnoreCase("serviceState") ? String(heating.serviceOff ? "SERVICE OFF" : heating.serviceOn > 0 ? "SERVICE ON" : "") :
                          paramName.equalsIgnoreCase("params") ? outParams() :
+                         paramName.equalsIgnoreCase("current") ? String(temperatures.getCurrent(), 1) :
                          "????";
           client.print(value);
           clog(String("=") + value);
@@ -281,12 +316,17 @@ void respondT(WiFiClient& client, String& req, String& content) {
 
 void logPage(WiFiClient& client, const String& logfile = "LOG.TXT") {
   char buf [1000];
-  client.println("<a href='/'>Home</a><pre>");
+  client.println("<a href='/'>Home</a>");
+  client.println(String("<h2>-") + logfile + "-</h2>");
+  client.println("<pre>");
   File f = SD.open(logfile);
+
   if (f) {
     while (f.available()) {
       size_t cc = f.read(buf, 1000);
-      client.write(buf, cc);
+      if (cc > 0) {
+        client.write(buf, cc);
+      }
     }
     f.close();
   }
@@ -295,14 +335,7 @@ void logPage(WiFiClient& client, const String& logfile = "LOG.TXT") {
 }
 
 void deleteLogPage(WiFiClient& client, const String& logfile = "LOG.TXT") {
-  File f = SD.open(logfile, FILE_REWRITE);
-  if (f) {
-    f.println("");
-    f.close();
-    client.println("<p>Deleted log page</p>");
-  } else {
-    client.println("<p>Couldn't delete log page</p>");
-  }
+  client.println(String("<p>") + clearFile(logfile) + "</p>");
   client.println("<a href='/'>Home</a><br/>");
 }
 
@@ -334,7 +367,7 @@ void listDirectory(File dir, int indent, String&out) {
 void statusPage(WiFiClient& client, bool isUpd) {
   client.println("<pre>");
   String body = timeString() + "   " + (heating.serviceOff ? "SERVICE OFF  " : heating.serviceOn > 0 ? "SERVICE ON  " : "")
-                + (heating.isHeatingOn ? "ON" : "OFF") + "\n\n\n"
+                + (heating.isHeatingOn ? "ON" : "OFF") + "  " + temperatures.getCurrent() + "\n\n\n"
                 + "Weather:\n\n" + weather.weatherReport()
                 + "\nAvg Deficit: " + String(avgDeficit, 2)
                 + "\n\n\nTides:\n\n" + tidal.tidesReport() + "\n\n";
@@ -361,7 +394,7 @@ void statusPage(WiFiClient& client, bool isUpd) {
   }
 }
 
-void respond(WiFiClient& client, String& req, String& content) {
+void respond(WiFiClient& client, String& req, int contentLength) {
   // send a standard http response header
   client.println("HTTP/1.1 200 OK");
   client.println("Content-Type: text/html");
@@ -372,14 +405,18 @@ void respond(WiFiClient& client, String& req, String& content) {
   if (req.indexOf(" /log") > 0) {
     logPage(client);
   } if (req.indexOf(" /temps") > 0) {
-    logPage(client, "TEMPERATURES.TXT");
+    logPage(client, "TEMPERAT.TXT");
+  } else if (req.indexOf(" /file?") > 0) {
+    int ix = req.indexOf("?");
+    int jx = req.indexOf(" ", ix + 1);
+    logPage(client, req.substring(ix + 1, jx));
   } else if (req.indexOf(" /delete") > 0) {
     deleteLogPage(client);
-    deleteLogPage(client, "TEMPERATURES.TXT");
+    deleteLogPage(client, "TEMPERAT.TXT");
   } else if (req.indexOf(" /reboot") > 0) {
     client.println("<b>Rebooting</b>");
   } else if (req.indexOf("POST /template") >= 0) {
-    if (saveTemplate(content)) client.println("Template saved");
+    if (saveTemplate(client, contentLength)) client.println("Template saved");
     else client.println("Couldn't save template");
   } else if (req.indexOf("GET /template") >= 0) {
     client.println("<form method='POST'><textarea name='x'></textarea><input type='submit'/></form>");
@@ -394,18 +431,19 @@ void respond(WiFiClient& client, String& req, String& content) {
 void WebService::serveClient(WiFiClient& client)
 {
   String request;
-  String content;
-  getRequestFromClient(client, request, content);
-  if (content.length() > 0 && (request.indexOf(" /upd ") > 0 || request.indexOf("POST / ") >= 0)) {
+  int contentLengthToGet = getRequestFromClient(client, /*out*/ request);
+  if (contentLengthToGet > 0 && (request.indexOf("POST /upd ") > 0 || request.indexOf("POST / ") >= 0)) {
+    String content;
+    getContentFromClient(client, contentLengthToGet, /*out*/ content);
     respondParameterUpdate(client, request, content);
   }
-  else if (request.indexOf("favicon.ico") > 0) respondIcon(client, request, content);
-  else if (request.indexOf(" / ") > 0) respondT(client, request, content);
+  else if (request.indexOf("favicon.ico") > 0) respondIcon(client, request);
+  else if (request.indexOf(" / ") > 0) respondT(client, request);
   else if (request.indexOf(" /service?") > 0) {
     setOffOrOn(request);
-    respondT(client, request, content);
+    respondT(client, request);
   }
-  else respond(client, request, content);
+  else respond(client, request, contentLengthToGet);
   delay(1);
   client.flush();
   client.stop();

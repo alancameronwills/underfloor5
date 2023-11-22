@@ -113,7 +113,6 @@ void setup() {
   screen.start();
   webservice.start();
 
-
   transferRecentLog();
   getParams();
   sodaq_wdt_enable(WDT_PERIOD_8X);
@@ -192,7 +191,7 @@ void tryConnections() {
 
   if (!truncatedLog) {
     truncateLog();
-    truncateLog("TEMPERATURES.TXT");
+    truncateLog("TEMPERAT.TXT");
     truncatedLog = true;
   }
 }

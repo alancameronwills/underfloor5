@@ -20,7 +20,7 @@ String timeString ();
 String d2(int n);
 String TwoDigits(String n);
 String ThreeChars(String n);
-void clearFile(String fileName) ;
+String clearFile(String fileName) ;
 
 
 void clog (String msg);

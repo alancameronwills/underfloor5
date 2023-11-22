@@ -112,7 +112,10 @@ bool getWeb(char* host, int port, String request, String extraLine, String& resp
   return getWeb(host, port, request, extraLine, response, client);
 }
 
-
+unsigned long getWiFiTime()
+{
+  return WiFi.getTime();
+}
 
 void setTimeFromWiFi()
 {

@@ -25,17 +25,11 @@
 			width: 150pt;
 		}
 
-		.temperature {
-			border: 1px solid yellow;
-			border-radius: 4px;
-			padding: 6px;
-			margin:10px;
-		}
-		.temperature input {
+		#target {
 			font-size: 60pt;
 		}
 
-		.temperature span {
+		#c {
 			font-size: 32pt;
 			color: white;
 			font-weight: bold;
@@ -45,9 +39,6 @@
 		#vacation {
 			font-size: 18pt;
 			border: 1px solid blue;
-		}
-		#vacateLabel {
-			text-align: right;
 		}
 
 		#submit {
@@ -77,21 +68,20 @@
 	<h2 style="color:yellow">{%serviceState}</h2>
 	<table>
 		<tr>
-			<td title='Adjust the target temperature' class='temperature' id="targetBox">Target<br/>
-				<input type='number' id='target' name='target' value='{%target}' step='0.1' min='5.0' max='30.0' /><span
-						>C</span></td>
-			<td title='Current temperature' class='temperature' id="currentBox">Current<br/>
-				<input type='number' id='current' name='current'  value='{%current}' readonly /><span
-					>C</span></td>
+			<td title='Current'>Current<br/>
+				<input type='number' id='current' name='current' value='{%current}' readonly /><span
+					id='c'>C</span></td>
 
-
+			<td title='What you want the temperature in the room to be'>Target<br/>
+			<input type='number' id='target' name='target' value='{%target}' step='0.1' min='5.0' max='30.0' /><span
+					id='c'>C</span></td>
 		</tr>
 		<tr style="display:none">
 			<td title='Adjust this over many days until the temperature is correct. Then leave it be.'>Factor</td>
 			<td><input type='number' id='factor' name='factor' min='0.5' step='0.01' max='1.2' value='{%factor}' /></td>
 		</tr>
 		<tr>
-			<td id="vacateLabel" title='Heating will be minimal until this date. For normal operation, clear it or set to a past date.'>
+			<td title='Heating will be minimal until this date. For normal operation, clear it or set to a past date.'>
 				Vacate until</td>
 			<td><input type='date' min='2018-01-01' id='vacation' name='vacation'
 					value='{%vacation}' />&nbsp;&nbsp;<span id='clear' title="Turn off vacation"
