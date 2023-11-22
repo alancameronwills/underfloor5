@@ -76,7 +76,7 @@ RTCZero rtc;
 Tidal tidal;
 Weather weather;
 Heating heating;
-Temperatures temperatures(heating);
+Temperatures temperatures;
 WebService webservice;
 
 void adjustTargetTemp(float t);

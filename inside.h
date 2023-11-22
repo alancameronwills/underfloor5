@@ -33,11 +33,7 @@ class Temperatures {
     long previousRecord = 10000;
     float sumOverPeriod = 0;
     long int periodCount = 0;
-    Heating heating;
   public:
-    Temperatures(Heating& _heating) {
-      heating = _heating;
-    }
     float getCurrent() {
       int v = analogRead(THERMISTOR);
       return (v - 250) / 10.4;

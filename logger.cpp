@@ -122,12 +122,19 @@ void rlog (String msg, const char* fileName) {
 
 
 
-void sd_logger_start() {  
+void sd_logger_start() {
   pinMode(6, OUTPUT); // LED
   digitalWrite(6, LOW);
   pinMode(SD_CS, OUTPUT);       // SD card chip select
   digitalWrite(SD_CS, HIGH);
-  int sdOK = SD.begin(SD_CS);
+  int sdOK = 0;
+  {
+    int count = 0;
+    do {
+      sdOK = SD.begin(SD_CS);
+      if (!sdOK) delay(100);
+    } while (!sdOK && count++ < 20);
+  }
   if (logging) {
     Serial.begin(115200);
     int count = 0;

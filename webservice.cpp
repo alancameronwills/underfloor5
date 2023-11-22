@@ -320,12 +320,15 @@ void logPage(WiFiClient& client, const String& logfile = "LOG.TXT") {
   client.println(String("<h2>-") + logfile + "-</h2>");
   client.println("<pre>");
   File f = SD.open(logfile);
-
+  int count = 0;
   if (f) {
     while (f.available()) {
-      size_t cc = f.read(buf, 1000);
+      int cc = f.read(buf, 1000);
       if (cc > 0) {
         client.write(buf, cc);
+      } else {
+        delay (1);
+        if (count++>1000) break;
       }
     }
     f.close();
