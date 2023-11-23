@@ -458,12 +458,18 @@ void WebService::serveClient(WiFiClient& client)
 
 bool WebService::connectWiFi ()
 {
+  const IPAddress ip(192,168,1,90);
+  const IPAddress dns1(8,8,8,8);
+  const IPAddress dns2(8,8,4,4);
+  const IPAddress gateway(192,168,1,1);
+  const IPAddress mask(255,255,255,0);
   if (WiFi.status() != WL_CONNECTED)
   {
     if (!checkReconnect()) {
       return false;
     }
     clog("Connecting");
+    WiFi.config(ip, dns1, gateway,mask);
     WiFi.setHostname("heating.local");
     for (int tryCount = 0; tryCount < 3 && WiFi.status() != WL_CONNECTED; tryCount++) {
       WiFi.begin(wifiSSID[wifiSelected].c_str(), "egg2hell");

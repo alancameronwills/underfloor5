@@ -8,6 +8,7 @@
 extern float avgDeficit;
 extern bool logging;
 extern RTCZero rtc;
+extern Tidal tidal;
 
 /*
    Weather
@@ -199,6 +200,33 @@ bool Tidal::getSunMoon(String sunOrMoon, float &riseHour, float &setHour) {
            && extractRiseSet(s, sunOrMoon + "set", setHour);
   }
   else return false;
+}
+
+bool Tidal::getSunMoonAsync() {
+
+}
+
+class TidalResponseHandler : public WebResponseHandler {
+  String sunOrMoon;
+  public:
+    void gotResponse(int status, String content) {
+      
+    }
+    void setSunOrMoon(String s) {
+      sunOrMoon = s;
+    }
+};
+TidalResponseHandler tidalResponseHandler;
+
+bool Tidal::getSunMoonAsync(String sunOrMoon) {
+  String s;
+  String req = "/weatherapi/sunrise/3.0/{3}?lat=52.07&lon=-4.75&date=20{0}-{1}-{2}&offset=+00:00";
+  req.replace("{0}", d2(rtc.getYear()));
+  req.replace("{1}", d2(rtc.getMonth()));
+  req.replace("{2}", d2(rtc.getDay()));
+  req.replace("{3}", sunOrMoon);
+  tidalResponseHandler.setSunOrMoon(sunOrMoon);
+  getWebAsync((char*)"api.met.no", 443, req, "", &tidalResponseHandler);
 }
 
 

@@ -25,6 +25,11 @@ class Tidal {
 
     bool getTides();
     String tidesReport() ;
+
+    bool getSunMoonAsync();
+
+    bool getSunMoonAsync(String sunOrMoon);
+    
 };
 
 
