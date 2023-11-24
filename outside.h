@@ -2,6 +2,43 @@
 #define UF_OUTSIDE
 
 #include <Arduino.h>
+#include "webclient.h"
+
+class Tidal;
+class SunMoonResponseHandler : public WebResponseHandler {
+  protected:
+    Tidal *tidal;
+    String sunOrMoon;
+    void (*doneSunMoon)(bool);
+    bool extractRiseSet (String s, String id, float &hour);
+    
+    void checkDone();
+  public:
+    void setDoneHandler(void (*handler)(bool)) {
+      doneSunMoon = handler;
+    }
+    virtual String id()=0;
+};
+class SunResponseHandler : public SunMoonResponseHandler {
+  public:
+    SunResponseHandler(Tidal *t) {
+      tidal = t;
+    }
+    void gotResponse(int status, String content);
+    String id() {
+      return "sun";
+    }
+};
+class MoonResponseHandler : public SunMoonResponseHandler {
+  public:
+    MoonResponseHandler(Tidal *t) {
+      tidal = t;
+    }
+    void gotResponse(int status, String content);
+    String id() {
+      return "moon";
+    }
+};
 
 
 struct Tide {
@@ -12,24 +49,15 @@ struct Tide {
 };
 
 class Tidal {
+    bool getSunMoonAsync(SunMoonResponseHandler *responder, void (*done)(bool success));
   public:
     Tide tides [4];
-
     bool parseTides(String &msg);
-    bool extractRiseSet (String s, String id, float &hour);
-    float sunRise, sunSet, midday, moonRise, moonSet;
-
-    bool getSunMoon();
-
-    bool getSunMoon(String sunOrMoon, float &riseHour, float &setHour);
-
     bool getTides();
     String tidesReport() ;
-
-    bool getSunMoonAsync();
-
-    bool getSunMoonAsync(String sunOrMoon);
     
+    float sunRise, sunSet, midday, moonRise, moonSet;
+    bool getSunMoonAsync(void (*done)(bool success));
 };
 
 

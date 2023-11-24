@@ -132,9 +132,11 @@ class WebRequest
   bool active = false;
   bool ready = false;
   int status = 0;
-  unsigned long contentLength = 0;
-  unsigned long charCount = 0;
-  unsigned long startTime = 0;
+  long contentLengthExpected = -1;
+  long charCount = 0;
+  long startTime = 0;
+  long contentStart = 0;
+  long headerExaminedTo = 0;
   WiFiClient client;
   String response;
   WebResponseHandler *handler;
@@ -146,7 +148,9 @@ public:
     ready = false;
     client.stop();
     response = "";
-    contentLength = 0;
+    contentLengthExpected = -1;
+    headerExaminedTo = 0;
+    contentStart = 0;
     charCount = 0;
   }
   bool isActive() {return active;}
@@ -166,21 +170,42 @@ public:
       return false;
     }
   }
-  void loop () {
-    if (!active) return;
+  bool loop () {
+    if (!active) return false;
     if(!client.connected() || ready) {
       handler->gotResponse(status, response);
       clear();
-      return;
+      return false;
     }
     while(client.available() && !ready) {
       char c = client.read();
       // if (detail) clog(String(c));
       charCount++;
-      ready =  contentLength > 0 && charCount>=contentLength || millis() - startTime > webClientTimeout;
+      ready =  contentLengthExpected >= 0 && charCount>=contentLengthExpected || millis() - startTime > webClientTimeout;
       if (c=='\r') continue;
-      /* XXXXX */
+      response += c;
+      long responseLength = response.length();
+      if (c == '\n' && contentStart == 0 && responseLength >= 2)
+      {
+        if (response.charAt(responseLength - 2) == '\n') {
+          contentStart = responseLength;
+        }
+        if (contentLengthExpected == 0 && contentStart == 0)
+        {
+          String s = response.substring(headerExaminedTo);
+          headerExaminedTo = responseLength;
+          s.toLowerCase();
+          int icl = s.indexOf("content-length:");
+          if (icl >= 0)
+          {
+            contentLengthExpected = s.substring(icl + 16, icl + 24).toInt();
+            charCount = 0;
+            clogn(String("Content-Length: ") + contentLengthExpected);
+          }
+        }
+      }
     }
+    return true;
   }
 };
 const int WEBREQLISTSSIZE = 10;
@@ -196,15 +221,16 @@ bool getWebAsync(char *host, int port, String request, String extraLine, WebResp
   return webReqList[reqix].sendReq(host, port, request, extraLine, responseHandler);
 }
 
-/*
-void loop()
+void webClientLoop()
 {
+  bool waitingForResponses = false;
   for (int i = 0; i < WEBREQLISTSSIZE; i++)
   {
-    webReqList[i].loop();
+    if (webReqList[i].loop()) waitingForResponses = true;
   }
+  webIndicator(waitingForResponses);
 }
-*/
+
 
 unsigned long getWiFiTime()
 {
@@ -219,7 +245,7 @@ void setTimeFromWiFi()
   unsigned long timeInSeconds = 0;
   for (int tries = 0; tries < 20; tries++)
   {
-    timeInSeconds = WiFi.getTime();
+    timeInSeconds = getWiFiTime();
     if (timeInSeconds > 0)
       break;
     delay(500);

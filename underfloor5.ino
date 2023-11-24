@@ -137,6 +137,9 @@ void loop() {
   // Serve incoming web request:
   webservice.loop();
 
+  // check for responses to outgoing web requests:
+  webClientLoop();
+
   screen.loop();
 
   delay(100);
@@ -172,6 +175,11 @@ void minuteTasks() {
   digitalWrite(6, LOW);
 }
 
+void getSunMoonDone(bool ok) {
+  gotSun = ok;
+  screen.refresh();
+}
+
 void tryConnections() {
   if (!gotWeather || rtc.getYear() < 18) {
     gotWeather = tryGetWeather();
@@ -186,7 +194,7 @@ void tryConnections() {
   if (gotWeather) {
     if (gotTides && gotSun) pingConx();
     if (!gotTides) gotTides = tidal.getTides();
-    if (!gotSun) gotSun = tidal.getSunMoon();
+    if (!gotSun) tidal.getSunMoonAsync(getSunMoonDone);
   }
 
   if (!truncatedLog) {

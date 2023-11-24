@@ -182,55 +182,8 @@ String Tidal::tidesReport() {
   return r;
 }
 
-bool Tidal::getSunMoon() {
-  bool success = getSunMoon("sun", sunRise, sunSet) && getSunMoon("moon", moonRise, moonSet);
-  if (success && moonRise > moonSet) moonSet += 1.1; // show tomorrow's setting
-  return success;
-}
 
-bool Tidal::getSunMoon(String sunOrMoon, float &riseHour, float &setHour) {
-  String s;
-  String req = "/weatherapi/sunrise/3.0/{3}?lat=52.07&lon=-4.75&date=20{0}-{1}-{2}&offset=+00:00";
-  req.replace("{0}", d2(rtc.getYear()));
-  req.replace("{1}", d2(rtc.getMonth()));
-  req.replace("{2}", d2(rtc.getDay()));
-  req.replace("{3}", sunOrMoon);
-  if (getWeb((char*)"api.met.no", 443, req, "", s)) {
-    return extractRiseSet(s, sunOrMoon + "rise", riseHour)
-           && extractRiseSet(s, sunOrMoon + "set", setHour);
-  }
-  else return false;
-}
-
-bool Tidal::getSunMoonAsync() {
-
-}
-
-class TidalResponseHandler : public WebResponseHandler {
-  String sunOrMoon;
-  public:
-    void gotResponse(int status, String content) {
-      
-    }
-    void setSunOrMoon(String s) {
-      sunOrMoon = s;
-    }
-};
-TidalResponseHandler tidalResponseHandler;
-
-bool Tidal::getSunMoonAsync(String sunOrMoon) {
-  String s;
-  String req = "/weatherapi/sunrise/3.0/{3}?lat=52.07&lon=-4.75&date=20{0}-{1}-{2}&offset=+00:00";
-  req.replace("{0}", d2(rtc.getYear()));
-  req.replace("{1}", d2(rtc.getMonth()));
-  req.replace("{2}", d2(rtc.getDay()));
-  req.replace("{3}", sunOrMoon);
-  tidalResponseHandler.setSunOrMoon(sunOrMoon);
-  getWebAsync((char*)"api.met.no", 443, req, "", &tidalResponseHandler);
-}
-
-
-bool Tidal::extractRiseSet (String s, String id, float &hour) {
+bool SunMoonResponseHandler::extractRiseSet (String s, String id, float &hour) {
   int bodyStart = s.indexOf(id);
   if (bodyStart < 0) return false;
   int tStart = s.indexOf("T", bodyStart);
@@ -240,6 +193,49 @@ bool Tidal::extractRiseSet (String s, String id, float &hour) {
   clogn(String(id) + " " + hour);
   return true;
 }
+void SunMoonResponseHandler::checkDone() {
+  if (tidal->sunSet > 0 && tidal->sunRise > 0 && tidal->moonRise >= 0 && tidal->moonSet >= 0) {
+    (*doneSunMoon)(true);
+  }
+}
+
+void MoonResponseHandler::gotResponse(int status, String content) {
+  if (extractRiseSet(content, "moonrise", tidal->moonRise)
+      &&  extractRiseSet(content, "moonset", tidal->moonSet)) {
+    if (tidal->moonRise > tidal->moonSet) tidal->moonSet += 1.1; // tomorrow
+    checkDone();
+  }
+}
+void SunResponseHandler::gotResponse(int status, String content) {
+  if (extractRiseSet(content, "sunrise", tidal->sunRise)
+      &&  extractRiseSet(content, "sunset", tidal->sunSet)) {
+    checkDone();
+  }
+}
+
+MoonResponseHandler moonResponseHandler(&tidal);
+SunResponseHandler sunResponseHandler(&tidal);
+
+
+bool Tidal::getSunMoonAsync(SunMoonResponseHandler *responder, void (*done)(bool success)) {
+  responder->setDoneHandler(done);
+  String s;
+  String req = "/weatherapi/sunrise/3.0/{3}?lat=52.07&lon=-4.75&date=20{0}-{1}-{2}&offset=+00:00";
+  req.replace("{0}", d2(rtc.getYear()));
+  req.replace("{1}", d2(rtc.getMonth()));
+  req.replace("{2}", d2(rtc.getDay()));
+  req.replace("{3}", responder->id());
+  return getWebAsync((char*)"api.met.no", 443, req, "", responder);
+}
+
+bool Tidal::getSunMoonAsync(void (*done)(bool success)) {
+  moonRise = sunRise = moonSet = sunSet = -1;
+  getSunMoonAsync(&sunResponseHandler, done);
+  return getSunMoonAsync(&moonResponseHandler, done);
+}
+
+
+
 
 
 

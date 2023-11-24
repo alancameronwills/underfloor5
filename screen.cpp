@@ -104,6 +104,9 @@ void Screen::loop() {
     screenTimeout = 0;
     switchPage(mainPage);
   }
+  if (scheduledRefresh) {
+    refresh();
+  }
 }
 
 

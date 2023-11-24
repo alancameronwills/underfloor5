@@ -81,6 +81,7 @@ class Screen : PageController {
     StartupPage *startupPage = new StartupPage(this);
     Page *currentPage = NULL;
     bool IsTouched(TS_Point &p);
+    bool scheduledRefresh = false;
     void switchPage(Page *toPage) {
       if (toPage == currentPage) return;
       if (currentPage != NULL) currentPage->handleLeavingPage();
@@ -105,7 +106,11 @@ class Screen : PageController {
       currentPage->redraw();
     }
     void refresh() {
+      scheduledRefresh = false;
       currentPage->refresh();
+    }
+    void scheduleRefresh() {
+      scheduledRefresh = true;
     }
 };
 
