@@ -80,7 +80,7 @@ Temperatures temperatures;
 WebService webservice;
 
 void adjustTargetTemp(float t);
-Screen screen (adjustTargetTemp);
+Screen screen(adjustTargetTemp);
 Backlight backlight;
 
 
@@ -105,7 +105,7 @@ void setup() {
   gotWeather = false;
   clocked = false;
   periodsValid = false;
-  
+
   rtc.begin();
   sd_logger_start();
   backlight.setup();
@@ -183,7 +183,7 @@ void getSunMoonDone(bool ok) {
 void tryConnections() {
   if (!gotWeather || rtc.getYear() < 18) {
     gotWeather = tryGetWeather();
-    if (gotWeather)  {
+    if (gotWeather) {
       failCount = 0;
     }
     else {
@@ -247,16 +247,11 @@ bool tryGetWeather() {
 }
 
 
-void doItNow () {
+void doItNow() {
   schedMinute = 0;    // do it now
   backlight.on(true);      // light up screen
   gotWeather = false; // force recalc with new parameters
 }
-
-
-
-
-
 
 
 /*
@@ -264,16 +259,14 @@ void doItNow () {
 
 */
 
-
-
 // Have we set the heating low until a specified date?
-bool checkLowUntil () {
+bool checkLowUntil() {
   if (heating.lowUntilDate.length() > 0) {
     long ludY = heating.lowUntilDate.substring(0, 2).toInt();
     long ludM = heating.lowUntilDate.substring(3, 5).toInt();
     long ludD = heating.lowUntilDate.substring(6).toInt();
     long rtcYMD = rtc.getYear() * 10000 + rtc.getMonth() * 100 + rtc.getDay();
-    if (rtcYMD >= ludY * 10000 + ludM * 100 + ludD)  {
+    if (rtcYMD >= ludY * 10000 + ludM * 100 + ludD) {
       heating.lowUntilDate = "";
       dlogn("Cancelled vacation");
       saveParams();
@@ -286,25 +279,18 @@ bool checkLowUntil () {
 bool setPeriodsFromWeather()
 {
   if (avgDeficit < -20 || avgDeficit > 40) {
-    File f = SD.open("DEFICIT.TXT", FILE_READ);
-    if (!f) return false;
-    else {
-      char buf [20];
-      int count = f.read(buf, 19);
-      if (count <= 0 || count > 20) return false;
-      buf[count] = '\0';
-      String s (buf);
-      float loggedDeficit = s.toFloat();
-      if (loggedDeficit == 0.0) return false;
-      dlogn(String("Using logged deficit ") + loggedDeficit);
-      avgDeficit = loggedDeficit;
-    }
+    String s = getShortFileContent("DEFICIT.TXT");
+    if (s.length() == 0) return false;
+    float loggedDeficit = s.toFloat();
+    if (loggedDeficit == 0.0) return false;
+    dlogn(String("Using logged deficit ") + loggedDeficit);
+    avgDeficit = loggedDeficit;
   }
   heating.setPeriods(avgDeficit);
   return true;
 }
 
-float statsMean[12] = {4.5, 4.5, 5.0, 7.0, 11.0, 14.0, 15.0, 15.0, 12.0, 10.0, 7.0, 5.0};
+float statsMean[12] = { 4.5, 4.5, 5.0, 7.0, 11.0, 14.0, 15.0, 15.0, 12.0, 10.0, 7.0, 5.0 };
 // Approximate fallback if no forecast.
 void setPeriodsFromDate()
 {

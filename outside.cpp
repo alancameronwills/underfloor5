@@ -16,12 +16,8 @@ extern Tidal tidal;
 */
 
 bool getWeatherCache(String &response) {
-  File weatherCache = SD.open("WEATHER.TXT", FILE_READ);
-  if (weatherCache) {
-    char buf [6000];
-    weatherCache.read(buf, 6000);
-    weatherCache.close();
-    String bb(buf);
+  String bb = getShortFileContent("WEATHER.TXT");
+  if (bb.length()>0) {
     long timestamp = bb.toInt();
     long now = getWiFiTime();
     if (now > timestamp && timestamp > 0 && now - timestamp < 36000 /*10h*/)

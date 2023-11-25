@@ -12,25 +12,24 @@ void sd_logger_start();
 
 void transferRecentLog();
 
-void clearRecentLog ();
+void clearRecentLog();
 
 void truncateLog(const String& logfile);
 
-String timeString ();
+String timeString();
 String d2(int n);
 String TwoDigits(String n);
 String ThreeChars(String n);
-String clearFile(String fileName) ;
+String clearFile(String fileName);
 
 
-void clog (String msg);
-void dlogn(String msg) ;
+void clog(String msg);
+void dlogn(String msg);
 void clogn(String msg);
 void dclogn(String msg, bool fileLog);
 
-void rlog (String msg, const char* fileName) ;
+void rlog(String msg, const char* fileName);
 
-
-
+String getShortFileContent(char* fileName);
 
 #endif

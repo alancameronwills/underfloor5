@@ -155,3 +155,17 @@ void sd_logger_start() {
 
   transferRecentLog();
 }
+
+String getShortFileContent(char* fileName) {
+  static const int bufsz = 4000;
+  static char buf[bufsz];
+  File f = SD.open(fileName, FILE_READ);
+  if (f) {
+    int len = f.read(buf, bufsz);
+    if (len<bufsz) buf[len+1] = '\0';
+    f.close();
+    String bb(buf);
+   return bb;
+  }
+  else return ("");
+}

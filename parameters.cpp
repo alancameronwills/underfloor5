@@ -78,14 +78,10 @@ void saveParams() {
 
 // Get persistent data from SD card
 void getParams() {
-  static char buf[1000];
-  File f = SD.open("P.TXT", FILE_READ);
-  if (f) {
-    f.read(buf, 1000);
-    String bb(buf);
+  String bb = getShortFileContent("P.TXT");
+  if (bb.length()>0) {
     dlogn(String("Parameters from file:") + bb);
     updateParameters(bb);
-    f.close();
   } else {
     dlogn(String("No saved parameters - using defaults"));
   }

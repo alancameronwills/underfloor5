@@ -26,13 +26,14 @@ bool sendWebReq(WiFiClient &client, char *host, int port, String request, String
                + "Content-length: 0\r\n"
                + "\r\n";
 
-  clogn(String("WEB REQ ") + host + ":" + port + "\n" + req);
+  clogn(String("WEB REQ ") + host + ":" + port);
+  long begin = millis();
   sodaq_wdt_reset();
   if (port == 443 ? client.connectSSL(host, port) : client.connect(host, port))
   {
     // clog(String(millis() % 100000) + "+");
     client.print(req);
-    clogn("  SENT");
+    clogn(String("  SENT ") + (millis()-begin)/1000.0);
     return true;
   }
   else
@@ -114,7 +115,7 @@ bool getWeb(char *host, int port, String request, String extraLine, String &resp
     timedOut = (unsigned long)(millis() - startTime) > webClientTimeout;
     delay(10);
   }
-  clogn(String("Get took: ") + ((unsigned long)(millis() - startTime) / 1000.0) + (timedOut ? " timed out" : ""));
+  clogn(String("Get sync ") + host + " took: " + ((unsigned long)(millis() - startTime) / 1000.0) + (timedOut ? " timed out" : ""));
   client.stop();
   webIndicator(false);
   clogn(response);
@@ -129,84 +130,91 @@ bool getWeb(char *host, int port, String request, String extraLine, String &resp
 
 class WebRequest
 {
-  bool active = false;
-  bool ready = false;
-  int status = 0;
-  long contentLengthExpected = -1;
-  long charCount = 0;
-  long startTime = 0;
-  long contentStart = 0;
-  long headerExaminedTo = 0;
-  WiFiClient client;
-  String response;
-  WebResponseHandler *handler;
+    String host;
+    bool active = false;
+    bool ready = false;
+    int status = 0;
+    long contentLengthExpected = -1;
+    long charCount = 0;
+    long startTime = 0;
+    long contentStart = 0;
+    long headerExaminedTo = 0;
+    WiFiClient client;
+    String response;
+    WebResponseHandler *handler;
 
-public:
-  void clear()
-  {
-    active = false;
-    ready = false;
-    client.stop();
-    response = "";
-    contentLengthExpected = -1;
-    headerExaminedTo = 0;
-    contentStart = 0;
-    charCount = 0;
-  }
-  bool isActive() {return active;}
-  bool sendReq(char *host, int port, String request, String extraLine, WebResponseHandler *responseHandler)
-  {
-    clear();
-    active = true;
-    handler = responseHandler;
-    startTime = millis();
-    if (sendWebReq(client, host, port, request, extraLine))
+  public:
+    void clear()
     {
-      return true;
+      active = false;
+      ready = false;
+      client.stop();
+      response = "";
+      contentLengthExpected = -1;
+      headerExaminedTo = 0;
+      contentStart = 0;
+      charCount = 0;
     }
-    else
+    bool isActive() {
+      return active;
+    }
+    bool sendReq(char *hostc, int port, String request, String extraLine, WebResponseHandler *responseHandler)
     {
+      host = hostc;
       clear();
-      return false;
-    }
-  }
-  bool loop () {
-    if (!active) return false;
-    if(!client.connected() || ready) {
-      handler->gotResponse(status, response);
-      clear();
-      return false;
-    }
-    while(client.available() && !ready) {
-      char c = client.read();
-      // if (detail) clog(String(c));
-      charCount++;
-      ready =  contentLengthExpected >= 0 && charCount>=contentLengthExpected || millis() - startTime > webClientTimeout;
-      if (c=='\r') continue;
-      response += c;
-      long responseLength = response.length();
-      if (c == '\n' && contentStart == 0 && responseLength >= 2)
+      active = true;
+      handler = responseHandler;
+      startTime = millis();
+      if (sendWebReq(client, hostc, port, request, extraLine))
       {
-        if (response.charAt(responseLength - 2) == '\n') {
-          contentStart = responseLength;
-        }
-        if (contentLengthExpected == 0 && contentStart == 0)
-        {
-          String s = response.substring(headerExaminedTo);
-          headerExaminedTo = responseLength;
-          s.toLowerCase();
-          int icl = s.indexOf("content-length:");
-          if (icl >= 0)
-          {
-            contentLengthExpected = s.substring(icl + 16, icl + 24).toInt();
-            charCount = 0;
-            clogn(String("Content-Length: ") + contentLengthExpected);
-          }
-        }
+        return true;
+      }
+      else
+      {
+        clear();
+        return false;
       }
     }
-    return true;
-  }
+    bool loop () {
+      if (!active) return false;
+      if (!client.connected() || ready) {
+        clogn(String ("Async get ") + host
+              + " took: " + (millis() - startTime)/1000.0 + " header: " + contentStart + " content: " + contentLengthExpected);
+        //clogn(response);
+        handler->gotResponse(status, response);
+        clear();
+        return false;
+      }
+      while (client.available() && !ready) {
+        char c = client.read();
+        // if (detail) clog(String(c));
+        charCount++;
+        ready =  contentLengthExpected >= 0 && charCount >= contentLengthExpected || millis() - startTime > webClientTimeout;
+        if (c == '\r') continue;
+        response += c;
+        long responseLength = response.length();
+        if (c == '\n' && contentStart == 0 && responseLength >= 2)
+        {
+          if (headerExaminedTo == responseLength-1) {
+            // empty line ==> end of header
+            contentStart = responseLength;
+            if (contentLengthExpected > 0) charCount = 0;
+          } else if (contentLengthExpected < 0 && contentStart == 0)
+          {
+            String s = response.substring(headerExaminedTo);
+            s.toLowerCase();
+            int icl = s.indexOf("content-length:");
+            if (icl >= 0)
+            {
+              contentLengthExpected = s.substring(icl + 16).toInt();
+              //clogn(String("@Content-Length: ") + contentLengthExpected);
+            }
+          }
+          headerExaminedTo = responseLength;
+        }
+      }
+      return true;
+    }
 };
 const int WEBREQLISTSSIZE = 10;
 WebRequest webReqList[WEBREQLISTSSIZE];

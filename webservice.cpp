@@ -529,15 +529,8 @@ bool WebService::checkReconnect() {
   else {
     // No embargo currently set. Might be first attempt after reset.
     // Look to see if there was a recent reconnection attempt.
-    const int bufsz = 40;
-    char buf[bufsz];
-    File f = SD.open("TRY_CONX.TXT", FILE_READ);
-    if (f) {
-      int count = f.read(buf, bufsz - 1);
-      f.close();
-      buf[count] = '\0';
-      String s (buf);
-
+    String s = getShortFileContent("TRY_CONX.TXT");
+    if (s.length()>0) {
       // If last connection (maybe before a reset) was recent, don't retry for a while.
       int loggedTodMinutes = s.toInt();
       // Ludicrous definition of % for -ve input.
