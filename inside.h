@@ -41,5 +41,4 @@ class Temperatures {
     void record() ;
 };
 
-
 #endif

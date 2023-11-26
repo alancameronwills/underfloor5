@@ -414,7 +414,7 @@ void respond(WiFiClient& client, String& req, int contentLength) {
     int jx = req.indexOf(" ", ix + 1);
     logPage(client, req.substring(ix + 1, jx));
   } else if (req.indexOf(" /delete") > 0) {
-    deleteLogPage(client);
+    deleteLogPage(client, "LOG.TXT");
     deleteLogPage(client, "TEMPERAT.TXT");
   } else if (req.indexOf(" /reboot") > 0) {
     client.println("<b>Rebooting</b>");

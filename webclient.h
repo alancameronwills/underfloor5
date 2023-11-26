@@ -21,6 +21,6 @@ class WebResponseHandler {
 		virtual void gotResponse(int status, String content)=0;
 };
 
-bool getWebAsync(char* host, int port, String request, String extraLine, WebResponseHandler *responseHandler);
+bool getWebAsync(char* host, int port, String request, String extraLine, WebResponseHandler *responseHandler, int braceLimit);
 
 #endif

@@ -33,8 +33,6 @@ bool isSummertime () {
   if (month == 10) return day < (31 - (((5 * year / 4) + 1) % 7));
 }
 
-
-
 String getProp (String &msg, String prop, int msgix, int endSegmentIx)
 {
   if (msgix < 0) return "";

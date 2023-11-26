@@ -130,8 +130,13 @@ bool getWeb(char *host, int port, String request, String extraLine, String &resp
 
 class WebRequest
 {
-    String host;
+    char *host;
+    int port;
+    String request;
+    String extraLine;
+    int braceMax = 1000;
     bool active = false;
+    bool waitingToSend = false;
     bool ready = false;
     int status = 0;
     long contentLengthExpected = -1;
@@ -147,6 +152,7 @@ class WebRequest
     void clear()
     {
       active = false;
+      waitingToSend = false;
       ready = false;
       client.stop();
       response = "";
@@ -154,18 +160,32 @@ class WebRequest
       headerExaminedTo = 0;
       contentStart = 0;
       charCount = 0;
+      braceMax = 1000;
+    }
+    bool isWaiting() {
+      return active && waitingToSend;
     }
     bool isActive() {
       return active;
     }
-    bool sendReq(char *hostc, int port, String request, String extraLine, WebResponseHandler *responseHandler)
-    {
-      host = hostc;
+    
+    bool queueReq(char *_host, int _port, String _request, String _extraLine, int braceLimit, WebResponseHandler *responseHandler){
       clear();
-      active = true;
+      host = _host;
+      port = _port;
+      request = _request;
+      extraLine = _extraLine;
+      braceMax = braceLimit;
       handler = responseHandler;
+      active = true;
+      waitingToSend = true;
+    }
+
+    bool sendReq()
+    {
+      waitingToSend = false;
       startTime = millis();
-      if (sendWebReq(client, hostc, port, request, extraLine))
+      if (sendWebReq(client, host, port, request, extraLine))
       {
         return true;
       }
@@ -176,22 +196,27 @@ class WebRequest
       }
     }
     bool loop () {
-      if (!active) return false;
+      if (!active || waitingToSend) return false;
       if (!client.connected() || ready) {
         clogn(String ("Async get ") + host
               + " took: " + (millis() - startTime)/1000.0 + " header: " + contentStart + " content: " + contentLengthExpected);
-        //clogn(response);
         handler->gotResponse(status, response);
         clear();
         return false;
       }
       while (client.available() && !ready) {
         char c = client.read();
-        // if (detail) clog(String(c));
         charCount++;
-        ready =  contentLengthExpected >= 0 && charCount >= contentLengthExpected || millis() - startTime > webClientTimeout;
+        ready = c=='}' && braceMax-- <= 0 ||
+          contentLengthExpected >= 0 && charCount >= contentLengthExpected ||
+          millis() - startTime > webClientTimeout;
         if (c == '\r') continue;
         response += c;
+        if ((int)c < 32 && c != '\n' && c != '\r' && c != '\t') {
+          ready = true;
+          clogn(String ("CTRL ") + (int)c);
+          break;
+        }
         long responseLength = response.length();
         if (c == '\n' && contentStart == 0 && responseLength >= 2)
         {
@@ -207,7 +232,7 @@ class WebRequest
             if (icl >= 0)
             {
               contentLengthExpected = s.substring(icl + 16).toInt();
-              //clogn(String("@Content-Length: ") + contentLengthExpected);
+              clogn(String("@Content-Length: ") + contentLengthExpected);
             }
           }
           headerExaminedTo = responseLength;
@@ -216,27 +241,33 @@ class WebRequest
       return true;
     }
 };
-const int WEBREQLISTSSIZE = 10;
+const int WebReqMaxActive = 2;
+const int WEBREQLISTSSIZE = 4;
 WebRequest webReqList[WEBREQLISTSSIZE];
 
-bool getWebAsync(char *host, int port, String request, String extraLine, WebResponseHandler *responseHandler)
+bool getWebAsync(char *host, int port, String request, String extraLine, WebResponseHandler *responseHandler, int braceLimit)
 {
   int reqix = 0;
   while (reqix < WEBREQLISTSSIZE && webReqList[reqix].isActive())
     reqix++;
   if (reqix >= WEBREQLISTSSIZE)
     return false;
-  return webReqList[reqix].sendReq(host, port, request, extraLine, responseHandler);
+  return webReqList[reqix].queueReq(host, port, request, extraLine, braceLimit, responseHandler);
 }
 
 void webClientLoop()
 {
-  bool waitingForResponses = false;
+  int waitingForResponses = 0;
+  WebRequest* nextUp = nullptr;
   for (int i = 0; i < WEBREQLISTSSIZE; i++)
   {
-    if (webReqList[i].loop()) waitingForResponses = true;
+    if (webReqList[i].loop()) waitingForResponses++;
+    else if (webReqList[i].isWaiting()) nextUp = &(webReqList[i]);
   }
   webIndicator(waitingForResponses);
+  if (waitingForResponses<WebReqMaxActive && nextUp != nullptr) {
+    nextUp->sendReq();
+  }
 }
 
 

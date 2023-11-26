@@ -101,6 +101,7 @@ void setup() {
 
   // Disable watchdog - may still be running after reset:
   sodaq_wdt_disable();
+  sodaq_wdt_enable(WDT_PERIOD_8X);
 
   gotWeather = false;
   clocked = false;
@@ -115,7 +116,6 @@ void setup() {
 
   transferRecentLog();
   getParams();
-  sodaq_wdt_enable(WDT_PERIOD_8X);
 }
 
 unsigned long schedMinute = 0;
@@ -177,6 +177,13 @@ void minuteTasks() {
 
 void getSunMoonDone(bool ok) {
   gotSun = ok;
+  dlogn(String("Sun ") + tidal.sunRise + ".." + tidal.sunSet + " Moon " + tidal.moonRise + ".." + tidal.moonSet);
+  screen.refresh();
+}
+
+void getTidesDone(bool ok) {
+  gotTides = ok;
+  dlogn(tidal.tidesReport());
   screen.refresh();
 }
 
@@ -193,7 +200,7 @@ void tryConnections() {
 
   if (gotWeather) {
     if (gotTides && gotSun) pingConx();
-    if (!gotTides) gotTides = tidal.getTides();
+    if (!gotTides) tidal.getTidesAsync(getTidesDone);
     if (!gotSun) tidal.getSunMoonAsync(getSunMoonDone);
   }
 

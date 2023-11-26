@@ -54,14 +54,20 @@ void truncateLog(const String& logfile) {
 
 
 String clearFile(String fileName) {
-  File f = SD.open(fileName, FILE_REWRITE);
+  String result = String("Couldn't remove ") + fileName;
+  for (int i = 0; i<10; i++) {
+    if (SD.remove(fileName)) {
+      result = String("Removed ") + fileName;
+      break;
+    }
+    delay (100);
+  }
+  File f = SD.open(fileName, FILE_WRITE);
   if (f) {
     f.println("");
     f.close();
-    return String ("Emptied ") + fileName;
-  } else {
-    return String ("Couldn't open ") + fileName;
-  }
+  } 
+  return result;
 }
 String d2(int n)
 {

@@ -48,12 +48,16 @@ struct Tide {
   float height;
 };
 
-class Tidal {
+class Tidal : public WebResponseHandler {
     bool getSunMoonAsync(SunMoonResponseHandler *responder, void (*done)(bool success));
-  public:
-    Tide tides [4];
+    void (*done)(bool success);
     bool parseTides(String &msg);
-    bool getTides();
+  public:
+  /*WebResponseHandler*/
+    void gotResponse(int status, String content);
+  /*Tidal*/
+    Tide tides [4];
+    bool getTidesAsync(void (*done)(bool success));
     String tidesReport() ;
     
     float sunRise, sunSet, midday, moonRise, moonSet;

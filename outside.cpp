@@ -221,7 +221,7 @@ bool Tidal::getSunMoonAsync(SunMoonResponseHandler *responder, void (*done)(bool
   req.replace("{1}", d2(rtc.getMonth()));
   req.replace("{2}", d2(rtc.getDay()));
   req.replace("{3}", responder->id());
-  return getWebAsync((char*)"api.met.no", 443, req, "", responder);
+  return getWebAsync((char*)"api.met.no", 443, req, "", responder, 100);
 }
 
 bool Tidal::getSunMoonAsync(void (*done)(bool success)) {
@@ -231,22 +231,18 @@ bool Tidal::getSunMoonAsync(void (*done)(bool success)) {
 }
 
 
-
-
-
-
-bool Tidal::getTides()
-{
-  for (int i = 0; i < 4; i++) tides[i].eventType = "";
-  String tideResponse = "";
-  const String tideReq = String("/Home/GetPredictionData?stationId=0490");
-  if (getWeb((char*)"easytide.admiralty.co.uk", 443, tideReq, "", tideResponse)) {
-    dlogn("Got tides");
-    return parseTides(tideResponse);
+void Tidal::gotResponse(int status, String content) {
+  if (parseTides(content)) {
+    (*done)(true);
   }
-  else return false;
 }
 
+bool Tidal::getTidesAsync(void (*doneHandler)(bool success)) {
+  done = doneHandler;
+  for (int i = 0; i < 4; i++) tides[i].eventType = "";
+  const String tideReq = String("/Home/GetPredictionData?stationId=0490");
+  return getWebAsync((char*)"easytide.admiralty.co.uk", 443, tideReq, "", this, 8);
+}
 
 bool Tidal::parseTides(String &msg)
 {
