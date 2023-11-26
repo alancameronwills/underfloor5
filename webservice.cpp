@@ -435,7 +435,7 @@ void WebService::serveClient(WiFiClient& client)
 {
   String request;
   int contentLengthToGet = getRequestFromClient(client, /*out*/ request);
-  if (contentLengthToGet > 0 && (request.indexOf("POST /upd ") > 0 || request.indexOf("POST / ") >= 0)) {
+  if (contentLengthToGet > 0 && (request.indexOf("POST /upd ") >= 0 || request.indexOf("POST / ") >= 0)) {
     String content;
     getContentFromClient(client, contentLengthToGet, /*out*/ content);
     respondParameterUpdate(client, request, content);
