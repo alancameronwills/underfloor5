@@ -84,10 +84,13 @@ class WeatherDay {
 
 
 #define WEATHER_DAYS 5
-class Weather {
+
+class Weather : public WebResponseHandler {
     String location = "";
     static String codes [30];
+    void (*gotWeather)(bool);
   public:
+    void gotResponse(int, String);
     WeatherDay forecast[WEATHER_DAYS];
     String code(int i) {
       return codes[i];
@@ -96,7 +99,8 @@ class Weather {
     bool parseWeather(String& msg);
     float getForecastTempDiff(float targetTemp);
     bool getWeatherForecast(String& msg);
-    bool getWeather();
+    bool getWeatherForecastAsync();
+    bool getWeather(void(*_gotWeather)(bool));
 
 };
 

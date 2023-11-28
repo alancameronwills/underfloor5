@@ -53,7 +53,7 @@ extern float targetTemp;
 
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 
-bool Screen::IsTouched(TS_Point &p) {
+bool Screen::IsTouched(TS_Point& p) {
   // Crude debounce:
   unsigned nowMillis = millis();
   if (nowMillis - lastTouch < 500) return false;
@@ -124,7 +124,7 @@ void Page::drawNumberButton(float num, int y, unsigned int bg, unsigned int fg)
   tft.setTextColor(fg);
   tft.setFont(&FreeSansBold9pt7b);
   float t = round(10 * num) / 10.0 + 0.00001;
-  show (245, y + 40, (String("") + t).substring(0, 4));
+  show(245, y + 40, (String("") + t).substring(0, 4));
   tft.setFont(NULL);
 }
 
@@ -135,7 +135,7 @@ unsigned Page::rgb(byte r, byte g, byte b)
   return ((r & 248) << 8) + ((g & 252) << 3) + ((b & 248) >> 3);
 }
 
-void Page::drawStatus () {
+void Page::drawStatus() {
   showStatus(timeString().substring(0, 14) + "  " + (heating.isHeatingOn ? "ON" : "OFF"));
 }
 
@@ -168,13 +168,13 @@ void MainPage::drawHeatingPlan()
     tft.drawFastHLine(left, base - m, 240 - left, bgcolor);
   }
   // x-axis hour labels:
-  for (int h = 0; h < 24 ; h += 6) {
+  for (int h = 0; h < 24; h += 6) {
     tft.setTextSize(2);
     tft.setTextColor(color);
-    show (left + h * dx, 192, String(h));
+    show(left + h * dx, 192, String(h));
   }
   // current time:
-  tft.drawFastVLine((int)((rtc.getHours() + rtc.getMinutes() / 60.0)*dx) + left, 128, 60, TIDE_COLOR);
+  tft.drawFastVLine((int)((rtc.getHours() + rtc.getMinutes() / 60.0) * dx) + left, 128, 60, TIDE_COLOR);
 
   if (heating.lowUntilDate.length() > 0) {
     tft.setTextColor(31 << 11);
@@ -192,13 +192,14 @@ void MainPage::drawSunMoon(int left, int base, int dx) {
   if (tidal.sunRise < 1.0 || tidal.sunRise > 10.0 || tidal.sunSet < 15.0 || tidal.sunSet > 23.0) return;
   if (tidal.moonRise > 0 || tidal.moonSet > 0) {
     if (tidal.moonRise < tidal.moonSet) {
-      tft.fillRect((int)(left + tidal.moonRise * dx), 128, (int)((tidal.moonSet - tidal.moonRise)*dx), base - 128, moonColor);
-    } else {
-      tft.fillRect((int)(left + tidal.moonRise * dx), 128, (int)((24 - tidal.moonRise)*dx), base - 128, moonColor);
+      tft.fillRect((int)(left + tidal.moonRise * dx), 128, (int)((tidal.moonSet - tidal.moonRise) * dx), base - 128, moonColor);
+    }
+    else {
+      tft.fillRect((int)(left + tidal.moonRise * dx), 128, (int)((24 - tidal.moonRise) * dx), base - 128, moonColor);
       tft.fillRect(left, 128, (int)(tidal.moonSet * dx), base - 128, moonColor);
     }
   }
-  tft.fillRect((int)(left + tidal.sunRise * dx), 128, (int)((tidal.sunSet - tidal.sunRise)*dx), base - 128, dayColor);
+  tft.fillRect((int)(left + tidal.sunRise * dx), 128, (int)((tidal.sunSet - tidal.sunRise) * dx), base - 128, dayColor);
 }
 
 void MainPage::drawTides(int left, int base, int dx)
@@ -206,7 +207,7 @@ void MainPage::drawTides(int left, int base, int dx)
   int top = 0, bottom = 0, x0 = 0, y0 = 0;
   for (int i = 0; i < 4; i++)
   {
-    Tide &t = tidal.tides[i];
+    Tide& t = tidal.tides[i];
     if (t.eventType.length() == 0) break;
     int x = left + t.tod * dx;
     int y = base - t.height * (base - 128) / 10;
@@ -251,6 +252,13 @@ void vgrade(float rFrom, float gFrom, float bFrom, float rTo, float gTo, float b
   }
 }
 
+void Screen::switchPage(Page* toPage) {
+  if (toPage == currentPage) return;
+  if (currentPage != NULL) currentPage->handleLeavingPage();
+  currentPage = toPage;
+  redraw();
+  backlight.on(true);
+}
 
 
 /***** MainPage ****/
@@ -307,13 +315,14 @@ void MainPage::drawWindArrow(int day, String dirn) {
   if (c[0] == 'S' || c[0] == 'N') {
     dy = c[0] == 'N' ? -10 : 10;
     if (c[1] == '\0') dx = 0;
-    else  {
+    else {
       if (c[1] == 'W') dx = -10;
       else if (c[1] == 'E') dx = 10;
       else if (c[2] == 'W') dx = -3;
       else dx = 3;
     }
-  } else {
+  }
+  else {
     dx = c[0] == 'W' ? -10 : 10;
     if (c[1] == 'S') dy = 3;
     else if (c[1] == 'N') dy = -3;
@@ -328,7 +337,7 @@ void MainPage::drawTempBar(int xv, float t, float rain, float wind)
 {
   //clogn (String("tempBar ") + t + " " + rain);
   int width = min(18, 4 + wind / 3);
-  int x = leftAxis + 10 + (xv) * dayWidth / 2 - width / 2;
+  int x = leftAxis + 10 + (xv)*dayWidth / 2 - width / 2;
   int h = int(min(30, max(-10, t)) * 3);
   unsigned int barColor = int((100 - rain) * 0.63) << 5;
   if (h < 2 && h > -2)
@@ -380,11 +389,12 @@ void ControlPage::handleLeavingPage() {
 void ControlPage::handleTouch(TS_Point touch) {
   if (touch.x > 200) {
     screen->switchToMainPage();
-  } else {
+  }
+  else {
     if (touch.y < 120) targetTemp += 0.5;
     else targetTemp -= 0.5;
     this->refresh();
-    screen -> setTimeout(20000);
+    screen->setTimeout(20000);
   }
 }
 void ControlPage::redraw() {
@@ -414,10 +424,10 @@ void showStatus(String s) {
   tft.fillRect(0, 220, 240, 20, 0xFFFF);
   tft.setTextSize(2);
   tft.setTextColor(16);
-  show (4, 222, s);
+  show(4, 222, s);
 }
 
-void Backlight::setup () {
+void Backlight::setup() {
   pinMode(BACKLIGHT, OUTPUT);     // screen Backlight
   on(true);
 }

@@ -129,7 +129,7 @@ void Temperatures:: record() {
       File f = SD.open("TEMPERAT.TXT", FILE_WRITE);
       if (f) {
         clogn(String("Temp ") + avgTempOverPeriod);
-        f.println(timeString() + " " + (heating.isHeatingOn ? 1 : 0) + " " + avgTempOverPeriod);
+        f.println(timeString() + "\t\t" + (heating.isHeatingOn ? 1 : 0) + "\t" + avgTempOverPeriod);
         f.close();
       }
       periodCount = 0;
@@ -137,6 +137,3 @@ void Temperatures:: record() {
     }
   }
 }
-
-
-

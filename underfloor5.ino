@@ -215,6 +215,17 @@ void getAgain() {
   gotWeather = gotTides = gotSun = truncatedLog = false;
 }
 
+void gotWeatherHandler(bool ok) {
+  avgDeficit = weather.getForecastTempDiff(targetTemp);
+  gotWeather = setPeriodsFromWeather();
+  if (gotWeather) {
+    clogn("Got weather");
+    clogn(heating.shortPeriodsReport());
+    String vac = heating.lowUntilDate.length() > 0 ? String(" Vacation: ") + heating.lowUntilDate : String("");
+    dlogn(String("Target ") + targetTemp + " Avg deficit: " + avgDeficit + vac + " Total heating: " + heating.totalHours);
+  } else ("Not got weather");
+}
+
 bool tryGetWeather() {
   bool success = false;
   backlight.on(true);
@@ -224,31 +235,13 @@ bool tryGetWeather() {
     dlogn(webservice.ipString("IP "));
     showStatus(webservice.ipString("IP "));
     setTimeFromWiFi();
-    if (weather.getWeather())
-    {
-      clogn("Got weather");
-      success = true;
-    }
-    else {
-      dlogn("Couldn't get weather");
-      showStatus("Web fail weather");
-    }
+    weather.getWeather(gotWeatherHandler);
   }
   else {
     showStatus("No WiFi");
     dlogn("No WiFi");
   }
-  if (setPeriodsFromWeather())
-    periodsValid = true;
-  if (!periodsValid)
-  {
-    dlogn("No weather - using default heating");
-    setPeriodsFromDate();
-    periodsValid = true;
-  }
-  clogn(heating.shortPeriodsReport());
-  String vac = heating.lowUntilDate.length() > 0 ? String(" Vacation: ") + heating.lowUntilDate : String("");
-  dlogn(String("Target ") + targetTemp + " Avg deficit: " + avgDeficit + vac + " Total heating: " + heating.totalHours);
+  setPeriodsFromDate();
   screen.switchToMainPage();
   return success;
 }

@@ -15,9 +15,9 @@ extern Tidal tidal;
 
 */
 
-bool getWeatherCache(String &response) {
+bool getWeatherCache(String& response) {
   String bb = getShortFileContent("WEATHER.TXT");
-  if (bb.length()>0) {
+  if (bb.length() > 0) {
     long timestamp = bb.toInt();
     long now = getWiFiTime();
     if (now > timestamp && timestamp > 0 && now - timestamp < 36000 /*10h*/)
@@ -39,31 +39,40 @@ bool saveWeatherCache(String response) {
   return false;
 }
 
-bool Weather::getWeather() {
+bool Weather::getWeather(void (*_gotWeather)(bool)) {
+  gotWeather = _gotWeather;
   String response = "";
   if (getWeatherCache(/*&*/response) && parseWeather(response)) {
     dlogn("Got cached weather");
-  } else if (getWeatherForecast(/*&*/response) && parseWeather(response)) {
-    dlogn("Got weather");
-    saveWeatherCache(response);
-  } else return false;
-  avgDeficit = getForecastTempDiff(targetTemp);
-  return true;
+    gotWeather(true);
+    return true;
+  }
+  else return (getWeatherForecastAsync());
 }
 
 /*
 
    https://register.metoffice.gov.uk/MyAccountClient/account/view
 */
-bool Weather::getWeatherForecast(String& response)
+bool Weather::getWeatherForecastAsync()
 {
   const char* requestedLocation = "353070";
   const String weatherReq = String("/public/data/val/wxfcs/all/json/") + requestedLocation + "?res=daily&key=d8ebf147-4cd1-4824-aac9-635e600f9ba5";
-  return getWeb ((char*)"datapoint.metoffice.gov.uk", 80, weatherReq, "", /*&*/response);
+  //return getWeb ((char*)"datapoint.metoffice.gov.uk", 80, weatherReq, "", /*&*/response);
+  return getWebAsync((char*)"datapoint.metoffice.gov.uk", 80, weatherReq, "", this, 1000);
+}
+
+void Weather::gotResponse(int status, String response) {
+  if (parseWeather(response)) {
+    saveWeatherCache(response);
+    gotWeather(true);
+  }
 }
 
 
-String WeatherDay::report () {
+
+
+String WeatherDay::report() {
   return day(fcDate) + " " + TwoDigits(tempMax) + ".." + TwoDigits(tempMin) + " " + ThreeChars(windDirection) + TwoDigits(windSpeed) + " " + TwoDigits(precip) + "% " + weather + "\n";
 };
 
@@ -82,7 +91,7 @@ bool Weather::parseWeather(String& msg)
 {
   //clogn("Parse weather ");
   location = "";
-  for (int i = 0; i < WEATHER_DAYS ; i++) {
+  for (int i = 0; i < WEATHER_DAYS; i++) {
     forecast[i].fcDate = "";
   }
 
@@ -100,7 +109,7 @@ bool Weather::parseWeather(String& msg)
 
   bool gotLines = false;
 
-  for (int i = 0; i < WEATHER_DAYS ; i++)  {
+  for (int i = 0; i < WEATHER_DAYS; i++) {
     WeatherDay& cw = forecast[i];
     msgix = msg.indexOf(dateProlog, msgix + 1);
     if (msgix < 0) break;
@@ -115,6 +124,7 @@ bool Weather::parseWeather(String& msg)
     cw.precipN = getProp(msg, "PPn", msgix, endSegmentIx);
     String weatherCode = getProp(msg, "W", msgix, endSegmentIx);
     cw.weather = code(weatherCode.toInt());
+    if (cw.tempMin.length()==0 || cw.tempMax.length()==0) return false;
     report += cw.report();
   }
   clogn(report + "===");
@@ -127,7 +137,7 @@ float Weather::getForecastTempDiff(float targetTemp) {
   const float invAvgFactor = 1.0 - avgFactor;
   float avgTempDiff = 200;
   //int isAfternoon = rtc.getHours() > 12 ? 1 : 0;
-  for (int i = WEATHER_DAYS - 1;  i >= 0; i--)
+  for (int i = WEATHER_DAYS - 1; i >= 0; i--)
   {
     if (forecast[i].fcDate.length() > 0) {
       float mint = forecast[i].tempMin.toFloat();
@@ -170,7 +180,7 @@ String Tidal::tidesReport() {
   String dst = isSummertime() ? "BST" : "GMT";
   String r;
   for (int i = 0; i < 4; i++) {
-    Tide &t = tides[i];
+    Tide& t = tides[i];
     if (t.eventType.length() > 0) {
       r += String(String(t.eventType).substring(0, 2) + " " + d2(t.day) + " " + d2(int(t.tod)) + ":" + d2(int(t.tod * 60) % 60) + " " + dst + " " + t.height + "\n");
     }
@@ -179,7 +189,7 @@ String Tidal::tidesReport() {
 }
 
 
-bool SunMoonResponseHandler::extractRiseSet (String s, String id, float &hour) {
+bool SunMoonResponseHandler::extractRiseSet(String s, String id, float& hour) {
   int bodyStart = s.indexOf(id);
   if (bodyStart < 0) return false;
   int tStart = s.indexOf("T", bodyStart);
@@ -197,14 +207,14 @@ void SunMoonResponseHandler::checkDone() {
 
 void MoonResponseHandler::gotResponse(int status, String content) {
   if (extractRiseSet(content, "moonrise", tidal->moonRise)
-      &&  extractRiseSet(content, "moonset", tidal->moonSet)) {
+    && extractRiseSet(content, "moonset", tidal->moonSet)) {
     if (tidal->moonRise > tidal->moonSet) tidal->moonSet += 1.1; // tomorrow
     checkDone();
   }
 }
 void SunResponseHandler::gotResponse(int status, String content) {
   if (extractRiseSet(content, "sunrise", tidal->sunRise)
-      &&  extractRiseSet(content, "sunset", tidal->sunSet)) {
+    && extractRiseSet(content, "sunset", tidal->sunSet)) {
     checkDone();
   }
 }
@@ -213,7 +223,7 @@ MoonResponseHandler moonResponseHandler(&tidal);
 SunResponseHandler sunResponseHandler(&tidal);
 
 
-bool Tidal::getSunMoonAsync(SunMoonResponseHandler *responder, void (*done)(bool success)) {
+bool Tidal::getSunMoonAsync(SunMoonResponseHandler* responder, void (*done)(bool success)) {
   responder->setDoneHandler(done);
   String s;
   String req = "/weatherapi/sunrise/3.0/{3}?lat=52.07&lon=-4.75&date=20{0}-{1}-{2}&offset=+00:00";
@@ -244,7 +254,7 @@ bool Tidal::getTidesAsync(void (*doneHandler)(bool success)) {
   return getWebAsync((char*)"easytide.admiralty.co.uk", 443, tideReq, "", this, 8);
 }
 
-bool Tidal::parseTides(String &msg)
+bool Tidal::parseTides(String& msg)
 {
   int mix = 0;
   bool current = false; // skip tides earlier than the most recent
@@ -253,7 +263,7 @@ bool Tidal::parseTides(String &msg)
   int tix = 0;
   bool summer = isSummertime();
   while (tix < 4) {
-    Tide &t = tides[tix];
+    Tide& t = tides[tix];
     int endSegment = msg.indexOf("}", mix);
     if (endSegment < 0) {
       clogn("endsegment");
