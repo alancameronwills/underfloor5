@@ -33,6 +33,10 @@ bool isSummertime () {
   if (month == 10) return day < (31 - (((5 * year / 4) + 1) % 7));
 }
 
+long rtcSeconds() {
+  return rtc.getY2kEpoch();
+}
+
 String getProp (String &msg, String prop, int msgix, int endSegmentIx)
 {
   if (msgix < 0) return "";

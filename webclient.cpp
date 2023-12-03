@@ -306,9 +306,11 @@ void setTimeFromWiFi()
     dlogn("Failed to get time");
 }
 
+
 // Remind router we're here
 void pingConx()
 {
+  if (rtc.getMinutes()%20!=0) return;
   if (webservice.connectWiFi())
   {
     clog("ping ");

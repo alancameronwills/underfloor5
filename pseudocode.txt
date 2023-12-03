@@ -1,0 +1,59 @@
+EVERY 100ms:===
+'screen loop:
+'	if (screen update flag) {
+'		screen update
+'	}
+'	if (touch) {
+'		handle Touch
+'	}
+'backlight loop;
+'wifi loop:
+'	if (!wifi && >60s since last attempt)
+'		 {connect; >>>> screen update <<<<}
+'	if (wifi && rtc.year<18) set RTC from wifi;
+'if (wifi) {
+'	server loop;
+'	client loop;
+'}
+# if(!gotWeather) {
+#	get cached weather 
+#	if parse ok
+#		gotWeather = true
+#		&& heat-recalc-flag
+#}
+
+'reset watchdog;
+====
+
+EVERY MINUTE:
+#if wifi && weather cache older 12h && >600s since last try
+#	get real weather &&
+#	{{parse && heat-recalc-flag && save cache}}
+
+#if (!gotTides or tides old) getTides && {parseTides && refresh screen}
+#if (!gotSun or sun old) getSun && {}
+
+'record temperature
+
+heating loop:
+	if (recalc flag) {
+		recalc heating plan;
+		screen update flag;
+	}
+	if (no heating plan at all)
+		use default plan for time of year
+	if (plan is older than 1 minute)
+		switch off or on  
+			according to service switch || plan
+
+truncate log
+
+EVERY TEN MINUTES:
+
+'	ping
+
+EVERY 12 HOURS:
+	refresh time, weather, tides, sun, heating
+
+
+

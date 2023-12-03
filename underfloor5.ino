@@ -189,7 +189,7 @@ void getTidesDone(bool ok) {
 
 void tryConnections() {
   if (!gotWeather || rtc.getYear() < 18) {
-    gotWeather = tryGetWeather();
+    tryGetWeather();
     if (gotWeather) {
       failCount = 0;
     }
