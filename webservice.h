@@ -15,9 +15,10 @@ class WebService {
   int embargoUntil = -1; // ToD in minutes to resume attempts
   bool checkReconnect();
   long previousConnectionAttempt = 0;
+  void (*onConnectWiFi)();
 public:
   WebService() : server(80) {}
-  void start();
+  void start(void (*_onConnectWiFi)());
   bool connectWiFi();
   void loop(unsigned long now);
   String macAddress();

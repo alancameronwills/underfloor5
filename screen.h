@@ -98,6 +98,7 @@ class Screen : PageController {
       switchPage(controlPage);
     }
     void redraw() {
+      scheduledRefresh = false;
       currentPage->redraw();
     }
     void refresh() {

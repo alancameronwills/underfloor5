@@ -48,7 +48,8 @@ String WebService::macAddress() {
   return String("") + mac[0];
 }
 
-void WebService::start() {
+void WebService::start(void (*_onConnectWiFi)()) {
+  onConnectWiFi = _onConnectWiFi;
   if (server.status() == 0) {
     server.begin();
     WiFiDrv::pinMode(25, OUTPUT); //onboard LED green
@@ -62,6 +63,7 @@ void WebService::loop(unsigned long now) {
       previousConnectionAttempt = now;
       if(connectWiFi()) {
         setTimeFromWiFi();
+        onConnectWiFi();
       }
     }
   }
@@ -517,7 +519,6 @@ bool WebService::connectWiFi ()
     if (WiFi.status() == WL_CONNECTED) {
       dlogn(String(":) ") + wifiSSID[wifiSelected] + ipString(" "));
       connectFailStart = 0;
-      start();
     }
     else {
       clogn(":(");

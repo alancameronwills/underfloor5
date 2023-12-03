@@ -112,33 +112,26 @@ void setup() {
   backlight.setup();
   heating.setup();
   screen.start();
-  webservice.start();
+  webservice.start(onConnectWiFi);
 
   transferRecentLog();
   getParams();
 }
 
-unsigned long schedMinute = 0;
+void onConnectWiFi() {
+  screen.scheduleRefresh();
+}
+
 
 // ENTRY: run every 100ms
 void loop() {
 
-  // Once a minute
   unsigned long m = millis();        // timer
 
-  // Respond to photocell
-  backlight.loop(m); // light up screen if rqd
-
-  // Serve incoming web request:
-  webservice.loop(m);
-
-  // check for responses to outgoing web requests:
-  webClientLoop();
-
-  if ((long)(m - schedMinute) > 0) {
-    minuteTasks();
-    schedMinute = 60000 + m;
-  }
+  backlight.loop(m);  // light up screen if rqd
+  webservice.loop(m); // Serve incoming web request:
+  webClientLoop();    // check for responses to outgoing web requests
+  minuteLoop(m);
   screen.loop();
 
   delay(100);
@@ -147,8 +140,15 @@ void loop() {
   // within its timeout period. Guards against hang-ups.
 }
 
-/** 0..255 colours to TFT colour
-*/
+
+unsigned long previousMinute = 0;
+
+void minuteLoop(unsigned long m) {
+    if (abs(m - previousMinute) > 60000) {
+      previousMinute = m;
+      minuteTasks();
+  }
+}
 
 int failCount = 0;
 int minuteCount = 0;
@@ -189,7 +189,9 @@ void getTidesDone(bool ok) {
 
 void tryConnections() {
   if (!gotWeather) {
-    tryGetWeather();
+    backlight.on(true);
+    weather.useWeatherAsync(gotWeatherHandler);
+    screen.switchToMainPage();
   }
 
   if (gotWeather) {
@@ -223,18 +225,10 @@ void gotWeatherHandler(Weather * weatherGot) {
   }
 }
 
-bool tryGetWeather() {
-  bool success = false;
-  backlight.on(true);
-
-  weather.useWeatherAsync(gotWeatherHandler);
-  screen.switchToMainPage();
-  return success;
-}
 
 
 void doItNow() {
-  schedMinute = 0;    // do it now
+  previousMinute = 0;    // do it now
   backlight.on(true);      // light up screen
   gotWeather = false; // force recalc with new parameters
 }

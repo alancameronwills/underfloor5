@@ -415,6 +415,7 @@ void StartupPage::redraw() {
   tft.fillCircle(120, 120, 60, rgb(0, 255, 0)); // 31 << 11); // rgb(255,0,0)
   tft.setTextColor(0);
   tft.setTextSize(2); // 12 x 16
+  showIP();
 }
 
 /*******************/
