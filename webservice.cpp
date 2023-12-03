@@ -4,6 +4,8 @@
 #include "inside.h"
 #include "outside.h"
 
+#include <WiFiNINA.h>   // on-board wifi
+#include <WiFiUdp.h>
 #include <utility/wifi_drv.h> // for indicator lamp WiFiDrv
 #include <RTCZero.h>
 #include <Sodaq_wdt.h>  // watchdog
@@ -40,12 +42,35 @@ void softReboot();
 void saveParams();
 void updateParameters(String& content);
 
+String WebService::macAddress() {
+  byte mac[6];
+  WiFi.macAddress(mac);
+  return String("") + mac[0];
+}
+
 void WebService::start() {
   if (server.status() == 0) {
     server.begin();
     WiFiDrv::pinMode(25, OUTPUT); //onboard LED green
     WiFiDrv::pinMode(26, OUTPUT); //onboard LED red
     WiFiDrv::pinMode(27, OUTPUT); //onboard LED blue
+  }
+}
+void WebService::loop(unsigned long now) {
+  if (WiFi.status() != WL_CONNECTED) {
+    if (now - previousConnectionAttempt > 60000 || previousConnectionAttempt > now || previousConnectionAttempt == 0) {
+      previousConnectionAttempt = now;
+      if(connectWiFi()) {
+        setTimeFromWiFi();
+      }
+    }
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    WiFiClient sclient = server.available();
+    if (sclient) {
+      clogn("server client");
+      serveClient(sclient);
+    }
   }
 }
 
@@ -58,6 +83,7 @@ void setOffOrOn (String request) {
   heating.serviceOn = 0;
   if (request.indexOf("?set=off ") > 0) heating.serviceOff = true;
   else if (request.indexOf("?set=on ") > 0) heating.serviceOn = millis() + 30 * 60 * 1000;
+  dlogn(String("SERVICE ")+(heating.serviceOff ? "OFF" : (heating.serviceOn ? "ON" : "NORMAL")) );
   doItNow();
 }
 
@@ -489,7 +515,7 @@ bool WebService::connectWiFi ()
     }
 
     if (WiFi.status() == WL_CONNECTED) {
-      clogn(String(":) ") + wifiSSID[wifiSelected]);
+      dlogn(String(":) ") + wifiSSID[wifiSelected] + ipString(" "));
       connectFailStart = 0;
       start();
     }
@@ -561,4 +587,42 @@ bool WebService::checkReconnect() {
 String WebService::ipString(const char *c) {
   IPAddress ip = WiFi.localIP();
   return String(c) + ip[0] + "." + ip[1] + "." + ip[2] + "." + ip[3];
+}
+
+bool rtcIsBegun = false;
+int rtcLastSetDay = 0;
+
+void setTimeFromWiFi()
+{
+  if (!rtcIsBegun) {
+    rtcIsBegun = true;
+    rtc.begin();
+  }
+  if (rtc.getYear() > 18 && rtc.getDay() == rtcLastSetDay) return;
+  if (WiFi.status() != WL_CONNECTED)
+    return;
+  unsigned long timeInSeconds = 0;
+  for (int tries = 0; tries < 20; tries++)
+  {
+    timeInSeconds = getWiFiTime();
+    if (timeInSeconds > 0)
+      break;
+    delay(500);
+    digitalWrite(6, HIGH);
+    delay(500);
+    digitalWrite(6, LOW);
+    sodaq_wdt_reset();
+  }
+  if (timeInSeconds > 0)
+  {
+    rtc.setEpoch(timeInSeconds);
+    if (isSummertime())
+    {
+      rtc.setEpoch(timeInSeconds + 3600);
+    }
+    clogn("Got time");
+    rtcLastSetDay = rtc.getDay();
+  }
+  else
+    dlogn("Failed to get time");
 }

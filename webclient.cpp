@@ -2,6 +2,7 @@
 #include "webservice.h"
 #include "parameters.h"
 #include "utility.h"
+#include "logger.h"
 #include <RTCZero.h> // clock
 
 #include <Sodaq_wdt.h> // watchdog
@@ -13,7 +14,6 @@ bool sendWebReq(WiFiClient &client, char *host, int port, String request, String
 {
   if (WiFi.status() != WL_CONNECTED)
   {
-    if (!webservice.connectWiFi())
       return false;
   }
 
@@ -274,36 +274,6 @@ void webClientLoop()
 unsigned long getWiFiTime()
 {
   return WiFi.getTime();
-}
-
-void setTimeFromWiFi()
-{
-  if (WiFi.status() != WL_CONNECTED)
-    return;
-  rtc.begin();
-  unsigned long timeInSeconds = 0;
-  for (int tries = 0; tries < 20; tries++)
-  {
-    timeInSeconds = getWiFiTime();
-    if (timeInSeconds > 0)
-      break;
-    delay(500);
-    digitalWrite(6, HIGH);
-    delay(500);
-    digitalWrite(6, LOW);
-    sodaq_wdt_reset();
-  }
-  if (timeInSeconds > 0)
-  {
-    rtc.setEpoch(timeInSeconds);
-    if (isSummertime())
-    {
-      rtc.setEpoch(timeInSeconds + 3600);
-    }
-    clogn("Got time");
-  }
-  else
-    dlogn("Failed to get time");
 }
 
 

@@ -122,24 +122,23 @@ unsigned long schedMinute = 0;
 
 // ENTRY: run every 100ms
 void loop() {
-  clearRecentLog();
 
   // Once a minute
   unsigned long m = millis();        // timer
-  if ((long)(m - schedMinute) > 0) {
-    minuteTasks();
-    schedMinute = 60000 + m;
-  }
 
   // Respond to photocell
   backlight.loop(m); // light up screen if rqd
 
   // Serve incoming web request:
-  webservice.loop();
+  webservice.loop(m);
 
   // check for responses to outgoing web requests:
   webClientLoop();
 
+  if ((long)(m - schedMinute) > 0) {
+    minuteTasks();
+    schedMinute = 60000 + m;
+  }
   screen.loop();
 
   delay(100);
@@ -154,6 +153,7 @@ void loop() {
 int failCount = 0;
 int minuteCount = 0;
 void minuteTasks() {
+  clearRecentLog();
   digitalWrite(6, HIGH); // Light the LED
 
   if (minuteCount == 0 || minuteCount == 1) tryConnections();
@@ -188,14 +188,8 @@ void getTidesDone(bool ok) {
 }
 
 void tryConnections() {
-  if (!gotWeather || rtc.getYear() < 18) {
+  if (!gotWeather) {
     tryGetWeather();
-    if (gotWeather) {
-      failCount = 0;
-    }
-    else {
-      if (++failCount > 12) softReboot(); // sustained failures
-    }
   }
 
   if (gotWeather) {
@@ -223,25 +217,17 @@ void gotWeatherHandler(Weather * weatherGot) {
     clogn(heating.shortPeriodsReport());
     String vac = heating.lowUntilDate.length() > 0 ? String(" Vacation: ") + heating.lowUntilDate : String("");
     dlogn(String("Target ") + targetTemp + " Avg deficit: " + avgDeficit + vac + " Total heating: " + heating.totalHours);
-  } else ("Not got weather");
+  } else {
+    clogn("Not got weather - using date-based default");
+    setPeriodsFromDate();
+  }
 }
 
 bool tryGetWeather() {
   bool success = false;
   backlight.on(true);
-  showStatus("Connecting...");
-  if (webservice.connectWiFi())
-  {
-    dlogn(webservice.ipString("IP "));
-    showStatus(webservice.ipString("IP "));
-    setTimeFromWiFi();
-    weather.useWeatherAsync(gotWeatherHandler);
-  }
-  else {
-    showStatus("No WiFi");
-    dlogn("No WiFi");
-  }
-  setPeriodsFromDate();
+
+  weather.useWeatherAsync(gotWeatherHandler);
   screen.switchToMainPage();
   return success;
 }
