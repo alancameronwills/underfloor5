@@ -105,7 +105,7 @@ void Screen::loop() {
     switchPage(mainPage);
   }
   if (scheduledRefresh) {
-    refresh();
+    redraw();
   }
 }
 
@@ -270,8 +270,8 @@ void MainPage::handleTouch(TS_Point touch) {
 void MainPage::redraw() {
   tft.fillScreen(bgcolor);
 
-  if (weather.forecast[0].fcDate.length() > 0) {
-    drawTempGraphBg(dayIndex(weather.forecast[0].fcDate));
+  if (weather.getWeatherDay(0)->fcDate.length() > 0) {
+    drawTempGraphBg(dayIndex(weather.getWeatherDay(0)->fcDate));
     drawTempBars();
   }
   this->refresh();
@@ -299,11 +299,11 @@ void MainPage::drawTemperature() {
 void MainPage::drawTempBars() {
   for (int i = 0; i < 5; i++)
   {
-    WeatherDay& fc = weather.forecast[i];
-    if (fc.fcDate.length() > 0) {
-      drawTempBar(i * 2, fc.tempMax.toFloat(), fc.precip.toFloat(), fc.windSpeed.toFloat());
-      drawTempBar(i * 2 + 1, fc.tempMin.toFloat(), fc.precipN.toFloat(), fc.windSpeed.toFloat());
-      drawWindArrow(i, fc.windDirection);
+    WeatherDay* fc = weather.getWeatherDay(i);
+    if (fc->fcDate.length() > 0) {
+      drawTempBar(i * 2, fc->tempMax.toFloat(), fc->precip.toFloat(), fc->windSpeed.toFloat());
+      drawTempBar(i * 2 + 1, fc->tempMin.toFloat(), fc->precipN.toFloat(), fc->windSpeed.toFloat());
+      drawWindArrow(i, fc->windDirection);
     }
   }
 }

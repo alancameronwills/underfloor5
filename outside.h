@@ -82,26 +82,33 @@ class WeatherDay {
 
 #define WEATHER_DAYS 5
 
-
-#define WEATHER_DAYS 5
-
 class Weather : public WebResponseHandler {
     String location = "";
     static String codes [30];
-    void (*gotWeather)(bool);
+    void (*gotWeather)(Weather*);
+    unsigned long forecastTimestamp = 0; // seconds when got from web
+    /** Hours since real forecast obtained, or 0 == never == forecast invalid*/
+    int weatherAge();
+    WeatherDay forecast[WEATHER_DAYS];
+    bool getWeatherForecastAsync();
+    bool parseWeather(String& msg, unsigned long timestamp);
   public:
     void gotResponse(int, String);
-    WeatherDay forecast[WEATHER_DAYS];
     String code(int i) {
       return codes[i];
     }
     String weatherReport() ;
-    bool parseWeather(String& msg);
-    float getForecastTempDiff(float targetTemp);
-    bool getWeatherForecast(String& msg);
-    bool getWeatherForecastAsync();
-    bool getWeather(void(*_gotWeather)(bool));
+    WeatherDay* getWeatherDay(int i) {
+      return &forecast[i];
+    }
 
+    /** Average temp difference in next few days */
+    float getForecastTempDiff(float targetTemp);
+
+    /** Ensure the forecast is more or less up to date
+     * then call _gotWeather
+    */
+    bool useWeatherAsync(void (*_gotWeather)(Weather*));
 };
 
 #endif

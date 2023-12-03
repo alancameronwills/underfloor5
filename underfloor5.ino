@@ -215,7 +215,7 @@ void getAgain() {
   gotWeather = gotTides = gotSun = truncatedLog = false;
 }
 
-void gotWeatherHandler(bool ok) {
+void gotWeatherHandler(Weather * weatherGot) {
   avgDeficit = weather.getForecastTempDiff(targetTemp);
   gotWeather = setPeriodsFromWeather();
   if (gotWeather) {
@@ -235,7 +235,7 @@ bool tryGetWeather() {
     dlogn(webservice.ipString("IP "));
     showStatus(webservice.ipString("IP "));
     setTimeFromWiFi();
-    weather.getWeather(gotWeatherHandler);
+    weather.useWeatherAsync(gotWeatherHandler);
   }
   else {
     showStatus("No WiFi");

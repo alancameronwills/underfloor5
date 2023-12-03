@@ -5,7 +5,6 @@
 #include "webclient.h"
 #include "parameters.h"
 
-extern float avgDeficit;
 extern bool logging;
 extern RTCZero rtc;
 extern Tidal tidal;
@@ -15,11 +14,11 @@ extern Tidal tidal;
 
 */
 
-bool getWeatherCache(String& response) {
+bool getWeatherCache(String& response, unsigned long& timestamp) {
   String bb = getShortFileContent("WEATHER.TXT");
   if (bb.length() > 0) {
-    long timestamp = bb.toInt();
-    long now = getWiFiTime();
+    timestamp = bb.toInt();
+    long now = rtcSeconds();
     if (now > timestamp && timestamp > 0 && now - timestamp < 36000 /*10h*/)
     {
       response = bb;
@@ -31,7 +30,7 @@ bool getWeatherCache(String& response) {
 bool saveWeatherCache(String response) {
   File weatherCache = SD.open("WEATHER.TXT", FILE_REWRITE);
   if (weatherCache) {
-    weatherCache.println(getWiFiTime());
+    weatherCache.println(rtcSeconds());
     weatherCache.println(response);
     weatherCache.close();
     return true;
@@ -39,15 +38,40 @@ bool saveWeatherCache(String response) {
   return false;
 }
 
-bool Weather::getWeather(void (*_gotWeather)(bool)) {
+/** public
+ *
+*/
+bool Weather::useWeatherAsync(void (*_gotWeather)(Weather*)) {
   gotWeather = _gotWeather;
-  String response = "";
-  if (getWeatherCache(/*&*/response) && parseWeather(response)) {
-    dlogn("Got cached weather");
-    gotWeather(true);
-    return true;
+  if (weatherAge() == 0) {
+    // No valid forecast in memory; first try cache:
+    unsigned long timestamp = 0;
+    String response;
+    if (getWeatherCache(/*&*/response, /*&*/timestamp)) {
+      // Sets weatherAge and forecast if the content makes sense:
+      parseWeather(response, timestamp);
+    }
   }
-  else return (getWeatherForecastAsync());
+  // weatherAge is possibly updated to cache age
+  if (weatherAge() != 0 && weatherAge() < 10) {
+    clogn("Using cached weather");
+    gotWeather(this); // use cached weather that's not too old
+    return true;
+  } else {
+    if (!getWeatherForecastAsync()) {
+      if (weatherAge() != 0) {
+        gotWeather(this); // use old cache because we can't get fresh
+      }
+      return false; // try again later
+    }
+    return true; // hope to receive forecast
+  }
+}
+
+/** Hours since real forecast obtained, or 0 == never == forcast invalid*/
+int Weather::weatherAge() {
+  if (forecastTimestamp == 0) return 0;
+  return (rtcSeconds() - forecastTimestamp) / 3600;
 }
 
 /*
@@ -63,19 +87,15 @@ bool Weather::getWeatherForecastAsync()
 }
 
 void Weather::gotResponse(int status, String response) {
-  if (parseWeather(response)) {
+  if (parseWeather(response, rtcSeconds())) {
     saveWeatherCache(response);
-    gotWeather(true);
+    gotWeather(this);
   }
 }
-
-
-
 
 String WeatherDay::report() {
   return day(fcDate) + " " + TwoDigits(tempMax) + ".." + TwoDigits(tempMin) + " " + ThreeChars(windDirection) + TwoDigits(windSpeed) + " " + TwoDigits(precip) + "% " + weather + "\n";
 };
-
 
 String Weather::weatherReport() {
   String w = location + "\n";
@@ -87,10 +107,11 @@ String Weather::weatherReport() {
   return w;
 }
 
-bool Weather::parseWeather(String& msg)
+bool Weather::parseWeather(String& msg, unsigned long timestamp)
 {
   //clogn("Parse weather ");
   location = "";
+  forecastTimestamp = 0; // flag "invalid"
   for (int i = 0; i < WEATHER_DAYS; i++) {
     forecast[i].fcDate = "";
   }
@@ -124,10 +145,13 @@ bool Weather::parseWeather(String& msg)
     cw.precipN = getProp(msg, "PPn", msgix, endSegmentIx);
     String weatherCode = getProp(msg, "W", msgix, endSegmentIx);
     cw.weather = code(weatherCode.toInt());
-    if (cw.tempMin.length()==0 || cw.tempMax.length()==0) return false;
+    if (cw.tempMin.length() == 0 || cw.tempMax.length() == 0) return false;
     report += cw.report();
   }
   clogn(report + "===");
+  if (gotLines) {
+    forecastTimestamp = timestamp;
+  }
   return gotLines;
 }
 
