@@ -70,23 +70,25 @@ bool debugging = true;
 
 bool logging = true;
 
-// Onboard clock
-RTCZero rtc;
-
-Tidal tidal;
-Weather weather;
-Heating heating;
-Temperatures temperatures;
-WebService webservice;
 
 void adjustTargetTemp(float t);
-Screen screen(adjustTargetTemp);
-Backlight backlight;
-
-
 void truncateLog(const String& logfile = "LOG.TXT");
 
+/*
+*     Global singletons
+*/
+RTCZero rtc;          // onboard clock
+Tidal tidal;          // tide predictions
+Weather weather;      // weather for next 5 days
+Heating heating;      // controls heating
+Temperatures temperatures;  // thermal log
+WebService webservice;      // web server
+Screen screen(adjustTargetTemp); // views and touch controller
+Backlight backlight;  // controlled by phototransistor
 
+/*
+*     Flags
+*/
 bool gotWeather;              // Weather got successfully, don't retry
 bool gotTides;
 bool gotSun;
@@ -95,6 +97,10 @@ bool truncatedLog;            // Done the truncation this 12-hour
 bool clocked = false;         // Done the 12-hourly update, don't do again this hour
 float avgDeficit = -200.0;    // Average outside temp - target. Invalid <100.
 
+
+void onConnectWiFi() {
+  screen.scheduleRefresh();
+}
 
 // ENTRY: Initialization
 void setup() {
@@ -108,7 +114,7 @@ void setup() {
   periodsValid = false;
 
   rtc.begin();
-  sd_logger_start();
+  sd_logger_start();  // open SD card and manage log files
   backlight.setup();
   heating.setup();
   screen.start();
@@ -118,9 +124,6 @@ void setup() {
   getParams();
 }
 
-void onConnectWiFi() {
-  screen.scheduleRefresh();
-}
 
 
 // ENTRY: run every 100ms
@@ -170,7 +173,7 @@ void minuteTasks() {
   }
 
   heating.switchHeating(); // switch on or off
-  screen.refresh();
+  screen.scheduleRefresh();
   temperatures.record();
   digitalWrite(6, LOW);
 }
@@ -178,13 +181,13 @@ void minuteTasks() {
 void getSunMoonDone(bool ok) {
   gotSun = ok;
   dlogn(String("Sun ") + tidal.sunRise + ".." + tidal.sunSet + " Moon " + tidal.moonRise + ".." + tidal.moonSet);
-  screen.refresh();
+  screen.scheduleRefresh();
 }
 
 void getTidesDone(bool ok) {
   gotTides = ok;
   dlogn(tidal.tidesReport());
-  screen.refresh();
+  screen.scheduleRefresh();
 }
 
 void tryConnections() {

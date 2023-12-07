@@ -3,6 +3,7 @@
 #include "logger.h"
 #include "inside.h"
 #include "outside.h"
+#include "template.h"
 
 #include <WiFiNINA.h>   // on-board wifi
 #include <WiFiUdp.h>
@@ -61,7 +62,7 @@ void WebService::loop(unsigned long now) {
   if (WiFi.status() != WL_CONNECTED) {
     if (now - previousConnectionAttempt > 60000 || previousConnectionAttempt > now || previousConnectionAttempt == 0) {
       previousConnectionAttempt = now;
-      if(connectWiFi()) {
+      if (connectWiFi()) {
         setTimeFromWiFi();
         onConnectWiFi();
       }
@@ -85,7 +86,7 @@ void setOffOrOn (String request) {
   heating.serviceOn = 0;
   if (request.indexOf("?set=off ") > 0) heating.serviceOff = true;
   else if (request.indexOf("?set=on ") > 0) heating.serviceOn = millis() + 30 * 60 * 1000;
-  dlogn(String("SERVICE ")+(heating.serviceOff ? "OFF" : (heating.serviceOn ? "ON" : "NORMAL")) );
+  dlogn(String("SERVICE ") + (heating.serviceOff ? "OFF" : (heating.serviceOn ? "ON" : "NORMAL")) );
   doItNow();
 }
 
@@ -116,42 +117,6 @@ void respondParameterUpdate(WiFiClient& client, String &request, String &content
 int unhex(char c) {
   return c < 'A' ? c - '0' : c - 'A' + 10;
 }
-
-bool saveTemplate(WiFiClient &client, int contentLength) {
-  clog("save");
-  File f = SD.open("TEMPLATE.HTM", FILE_REWRITE);
-  if (!f) return false;
-  clog("~");
-  int count = 0;
-  char code[2];
-  int codeChar = 0;
-  bool started = false;
-  while (client.connected() && client.available() && count++ < contentLength) {
-    char c = client.read();
-    if(!started) {
-      if (c=='=') started = true;
-      continue;
-    }
-    
-    if (c == '%') {
-      codeChar = 1;
-    } else if (codeChar > 0) {
-      code[codeChar++ -1] = c;
-      if (codeChar>2) {
-        codeChar= 0;
-        c = (char)(unhex(code[0])*16 + unhex(code[1]));
-        f.write(c);
-      }
-    } else {
-      if (c=='+') c = ' ';
-      f.write(c);
-    }
-  }
-  f.close();
-  clogn("#");
-  return started;
-}
-
 
 
 void decode(String &m) {
@@ -247,99 +212,51 @@ void respondIcon (WiFiClient& client, String& req)
   client.flush();
 }
 
-
-int findParameter(char *buf, int start, int end) {
-  for (int ix = start; ix < end; ix++) {
-    if (buf[ix] == '{' && buf[ix + 1] == '%') return ix;
+/* Determine whether we're looking at the specified parameter
+*/
+bool isParameter(const char *buf, char *name) {
+  int ix = 0;
+  for (ix = 0; name[ix]; ix++) {
+    if (buf[ix] != name[ix]) return false;
   }
-  return -1;
+  return true;
 }
 
 
-// Create a web page by substituting static var values into a template file.
+// Create a web page by substituting static var values into a template.
 // Current parameters are: {%temp} {%factor} {%vacation}
-// Template file is template.htm
 void respondT(WiFiClient& client, String& req) {
   const int maxParamNameLength = 20;
+  const int maxTemplateLength = 6000;
+  int charCount = 0;
   client.println("HTTP/1.1 200 OK");
   client.println("Content-Type: text/html");
   client.println("Connection: close");
   client.println();
 
-  const int bufsize = 1000; // Max block size
-  char buf [bufsize];
-  int offset = 0; // Start point for reading next block. Nearly always 0.
-  File templateFile = SD.open("TEMPLATE.HTM", FILE_READ);
-  clog("Template");
-  // Copy to client in blocks:
-  while (templateFile.available()) {
-    clog(":");
-    // Read a block into the buffer:
-    // Offset > 0 iff a chunk of parameter has been carried over from previous block.
-    int length = templateFile.read(buf + offset, bufsize - 1 - offset);
-    offset = 0;
-
-
-    int ix = 0, // We've copied to output up to this point.
-        pbx = 0,  // Start of a parameter: {%
-        pex = 0;  // End of parameter: }
-    while (ix < length) {
-      clog(";");
-      pbx = findParameter(buf, ix, length);
-      if (pbx >= 0) {
-        // Find the end of the parameter, or end of block, or give up as too long:
-        for (pex = pbx + 1; buf[pex] != '}' && pex < length && pex < pbx + maxParamNameLength; pex++);
-        if (buf[pex] != '}') {
-          if (pex < length) {
-            // Error: unterminated flag. Ignore parameter and continue as usual.
-            client.write(buf + ix, pex - ix);
-            ix = pex;
-            clog("!");
-          } else {
-            // Parameter crosses buffer boundary. Process it in next block.
-            // Write out buffer up to parameter:
-            client.write(buf + ix, pbx - ix);
-            ix = length; // End of block
-            // Copy the fragment of the parameter to the start of the buffer:
-            for (int tx = 0, fx = pbx; fx < length; tx++, fx++) buf[tx] = buf[fx];
-            // Read in the next block after the copied fragment:
-            offset = pex - pbx;
-            clog("~");
-          }
-        }
-        else {
-          // Found parameter.
-          // Copy up to start of parameter:
-          client.write(buf + ix, pbx - ix);
-
-          // Read parameter name and print its value:
-          buf[pex] = '\0'; // End-of-string flag overwrites '}'
-          String paramName ((char*)(buf + pbx + 2)); //
-          clog (String("") + paramName);
-          String value = paramName.equalsIgnoreCase("target") ? String(targetTemp, 1) :
-                         paramName.equalsIgnoreCase("factor") ? String(minsPerDegreePerHour) :
-                         paramName.equalsIgnoreCase("vacation") ? heating.lowUntilDate :
-                         paramName.equalsIgnoreCase("serviceState") ? String(heating.serviceOff ? "SERVICE OFF" : heating.serviceOn > 0 ? "SERVICE ON" : "") :
-                         paramName.equalsIgnoreCase("params") ? outParams() :
-                         paramName.equalsIgnoreCase("current") ? String(temperatures.getCurrent(), 1) :
-                         "????";
-          client.print(value);
-          clog(String("=") + value);
-
-          // Continue processing from end of parameter:
-          ix = pex + 1;
-        }
-      }
-      else {
-        // No further parameters. Copy rest of buffer:
-        client.write(buf + ix, length - ix);
-        ix = length; // End of block
-      }
-    }
+  int ix = 0, // We've copied to output up to this point.
+      pbx = 0;  // Start of a parameter: {%
+  while (htmlTemplate[ix] && ix < maxTemplateLength) {
+    // find next parameter or end of template
+    for (pbx = ix; htmlTemplate[pbx] && pbx < maxTemplateLength
+         && !(htmlTemplate[pbx] == '{' && htmlTemplate[pbx + 1] == '%'); pbx++);
+    // copy up to start of parameter or end of template
+    client.write(htmlTemplate + ix, pbx - ix);
+    if (htmlTemplate[pbx] != '{') break;  // <<<<<<< BREAK
+    const char *param = htmlTemplate + pbx + 2; // skip "{%"
+    int len = 0;
+    String value = isParameter(param, "target") ? String(targetTemp, 1) :
+                   isParameter(param, "factor") ? String(minsPerDegreePerHour) :
+                   isParameter(param, "vacation") ? heating.lowUntilDate :
+                   isParameter(param, "serviceState") ? String(heating.serviceOff ? "SERVICE OFF" : heating.serviceOn > 0 ? "SERVICE ON" : "") :
+                   isParameter(param, "params") ? outParams() :
+                   isParameter(param, "current") ? String(temperatures.getCurrent(), 1) :
+                   "????";
+    client.print(value);
+    clog(String("=") + value);
+    // Continue processing from end of parameter:
+    for (ix = pbx+2; htmlTemplate[ix] && htmlTemplate[ix++] != '}';);
   }
-  templateFile.close();
-  client.flush();
-  clogn("#");
 }
 
 void logPage(WiFiClient& client, const String& logfile = "LOG.TXT") {
@@ -356,7 +273,7 @@ void logPage(WiFiClient& client, const String& logfile = "LOG.TXT") {
         client.write(buf, cc);
       } else {
         delay (1);
-        if (count++>1000) break;
+        if (count++ > 1000) break;
       }
     }
     f.close();
@@ -446,11 +363,6 @@ void respond(WiFiClient& client, String& req, int contentLength) {
     deleteLogPage(client, "TEMPERAT.TXT");
   } else if (req.indexOf(" /reboot") > 0) {
     client.println("<b>Rebooting</b>");
-  } else if (req.indexOf("POST /template") >= 0) {
-    if (saveTemplate(client, contentLength)) client.println("Template saved");
-    else client.println("Couldn't save template");
-  } else if (req.indexOf("GET /template") >= 0) {
-    client.println("<form method='POST'><textarea name='x'></textarea><input type='submit'/></form>");
   } else {
     statusPage(client, req.indexOf(" /upd") > 0); // GET or POST but not Referer
   }
@@ -486,18 +398,18 @@ void WebService::serveClient(WiFiClient& client)
 
 bool WebService::connectWiFi ()
 {
-  const IPAddress ip(192,168,1,90);
-  const IPAddress dns1(8,8,8,8);
-  const IPAddress dns2(8,8,4,4);
-  const IPAddress gateway(192,168,1,1);
-  const IPAddress mask(255,255,255,0);
+  const IPAddress ip(192, 168, 1, 90);
+  const IPAddress dns1(8, 8, 8, 8);
+  const IPAddress dns2(8, 8, 4, 4);
+  const IPAddress gateway(192, 168, 1, 1);
+  const IPAddress mask(255, 255, 255, 0);
   if (WiFi.status() != WL_CONNECTED)
   {
     if (!checkReconnect()) {
       return false;
     }
     clog("Connecting");
-    WiFi.config(ip, dns1, gateway,mask);
+    WiFi.config(ip, dns1, gateway, mask);
     WiFi.setHostname("heating.local");
     for (int tryCount = 0; tryCount < 3 && WiFi.status() != WL_CONNECTED; tryCount++) {
       WiFi.begin(wifiSSID[wifiSelected].c_str(), "egg2hell");
@@ -557,7 +469,7 @@ bool WebService::checkReconnect() {
     // No embargo currently set. Might be first attempt after reset.
     // Look to see if there was a recent reconnection attempt.
     String s = getShortFileContent("TRY_CONX.TXT");
-    if (s.length()>0) {
+    if (s.length() > 0) {
       // If last connection (maybe before a reset) was recent, don't retry for a while.
       int loggedTodMinutes = s.toInt();
       // Ludicrous definition of % for -ve input.
