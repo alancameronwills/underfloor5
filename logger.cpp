@@ -23,6 +23,7 @@ void copyFile(File fi, String toFile, bool overWrite) {
   }
   if (fi) fi.close();
   if (fo) fo.close();
+  delay(300);
 }
 void copyFile(String fromFile, String toFile, bool overWrite) {
   File fi = SD.open(fromFile, FILE_READ);
@@ -50,6 +51,7 @@ void truncateLog(const String& logfile) {
       fi.close();
     }
   }
+  delay(300);
 }
 
 
@@ -67,6 +69,7 @@ String clearFile(String fileName) {
     f.println("");
     f.close();
   } 
+  delay(300);
   return result;
 }
 String d2(int n)
@@ -124,6 +127,7 @@ void rlog (String msg, const char* fileName) {
     ff.print(msg);
     ff.close();
   }
+  delay(100);
 }
 
 

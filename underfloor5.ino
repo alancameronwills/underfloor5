@@ -50,10 +50,6 @@
 
 
 #include <Arduino.h>
-#include <SPI.h>
-#include <SD.h>         // SD card for log and param files
-#include <WiFiNINA.h>   // on-board wifi
-#include <WiFiUdp.h>
 #include <RTCZero.h>    // clock
 #include "utility.h"
 #include "logger.h"
@@ -99,7 +95,9 @@ float avgDeficit = -200.0;    // Average outside temp - target. Invalid <100.
 
 
 void onConnectWiFi() {
+  clogn("Connected");
   screen.scheduleRefresh();
+  doItNow();
 }
 
 // ENTRY: Initialization
@@ -231,7 +229,8 @@ void gotWeatherHandler(Weather * weatherGot) {
 
 
 void doItNow() {
-  previousMinute = 0;    // do it now
+  previousMinute = millis() + 70000;    // do it now
+  minuteCount = 0;
   backlight.on(true);      // light up screen
   gotWeather = false; // force recalc with new parameters
 }

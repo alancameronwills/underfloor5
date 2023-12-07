@@ -92,6 +92,7 @@ class Weather : public WebResponseHandler {
     WeatherDay forecast[WEATHER_DAYS];
     bool getWeatherForecastAsync();
     bool parseWeather(String& msg, unsigned long timestamp);
+
   public:
     void gotResponse(int, String);
     String code(int i) {

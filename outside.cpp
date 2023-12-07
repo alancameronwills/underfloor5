@@ -39,7 +39,7 @@ bool saveWeatherCache(String response) {
 }
 
 /** public
- *
+
 */
 bool Weather::useWeatherAsync(void (*_gotWeather)(Weather*)) {
   gotWeather = _gotWeather;
@@ -107,7 +107,16 @@ String Weather::weatherReport() {
   return w;
 }
 
-bool Weather::parseWeather(String& msg, unsigned long timestamp)
+bool Weather::parseWeather(String& msg, unsigned long timestamp) {
+  Weather newWeather;
+  if (newWeather.tparseWeather(msg, timestamp)) {
+    (*this) = newWeather;
+    return true;
+  }
+  return false;
+}
+
+bool Weather::tparseWeather(String& msg, unsigned long timestamp)
 {
   //clogn("Parse weather ");
   location = "";
@@ -117,7 +126,7 @@ bool Weather::parseWeather(String& msg, unsigned long timestamp)
   }
 
   int msgix = 0;
-  const String dateProlog = "\"type\":\"Day\",\"value\":\"";
+  const String dateProlog = R"("type":"Day","value":")";
 
   msgix = msg.indexOf("\"Location\":");
   location = getProp(msg, "name", msgix, msgix + 10000);
@@ -231,14 +240,14 @@ void SunMoonResponseHandler::checkDone() {
 
 void MoonResponseHandler::gotResponse(int status, String content) {
   if (extractRiseSet(content, "moonrise", tidal->moonRise)
-    && extractRiseSet(content, "moonset", tidal->moonSet)) {
+      && extractRiseSet(content, "moonset", tidal->moonSet)) {
     if (tidal->moonRise > tidal->moonSet) tidal->moonSet += 1.1; // tomorrow
     checkDone();
   }
 }
 void SunResponseHandler::gotResponse(int status, String content) {
   if (extractRiseSet(content, "sunrise", tidal->sunRise)
-    && extractRiseSet(content, "sunset", tidal->sunSet)) {
+      && extractRiseSet(content, "sunset", tidal->sunSet)) {
     checkDone();
   }
 }
