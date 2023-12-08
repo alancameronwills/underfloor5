@@ -11,13 +11,13 @@ class SunMoonResponseHandler : public WebResponseHandler {
     String sunOrMoon;
     void (*doneSunMoon)(bool);
     bool extractRiseSet (String s, String id, float &hour);
-    
+
     void checkDone();
   public:
     void setDoneHandler(void (*handler)(bool)) {
       doneSunMoon = handler;
     }
-    virtual String id()=0;
+    virtual String id() = 0;
 };
 class SunResponseHandler : public SunMoonResponseHandler {
   public:
@@ -53,13 +53,13 @@ class Tidal : public WebResponseHandler {
     void (*done)(bool success);
     bool parseTides(String &msg);
   public:
-  /*WebResponseHandler*/
+    /*WebResponseHandler*/
     void gotResponse(int status, String content);
-  /*Tidal*/
+    /*Tidal*/
     Tide tides [4];
     bool getTidesAsync(void (*done)(bool success));
     String tidesReport() ;
-    
+
     float sunRise, sunSet, midday, moonRise, moonSet;
     bool getSunMoonAsync(void (*done)(bool success));
 };
@@ -91,7 +91,19 @@ class Weather : public WebResponseHandler {
     int weatherAge();
     WeatherDay forecast[WEATHER_DAYS];
     bool getWeatherForecastAsync();
+    bool tparseWeather(String& msg, unsigned long timestamp);
     bool parseWeather(String& msg, unsigned long timestamp);
+
+    Weather& operator= (const Weather &w) {
+      if (this != &w) {
+        location = w.location;
+        forecastTimestamp = w.forecastTimestamp;
+        for (int i = 0; i < WEATHER_DAYS; i++) {
+          forecast[i] = w.forecast[i];
+        }
+      }
+      return *this;
+    }
 
   public:
     void gotResponse(int, String);
@@ -107,7 +119,7 @@ class Weather : public WebResponseHandler {
     float getForecastTempDiff(float targetTemp);
 
     /** Ensure the forecast is more or less up to date
-     * then call _gotWeather
+       then call _gotWeather
     */
     bool useWeatherAsync(void (*_gotWeather)(Weather*));
 };
