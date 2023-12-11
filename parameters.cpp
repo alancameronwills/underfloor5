@@ -8,7 +8,7 @@ extern Heating heating;
 
 int webClientTimeout = 12000;  // ms
 int updateHour = 3; // AM and PM weather update
-float targetTemp = 20;
+float targetTemp = 21;
 float lowHoursPerDay = 0.5;  // Hours per day to run when away, to avoid condensation
 float avgFactor = 0.7; // skew across forecast days: raise -> today has more influence
 float windSpeedFactor = 0.1; // temp deficit multiplier per 100 mph

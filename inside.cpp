@@ -6,6 +6,7 @@
 
 extern float checkLowUntil ();
 extern RTCZero rtc;
+extern Temperatures temperatures;
 
 float cosMonth[12] = {1.0, 0.7, 0.25, -0.2, -0.7, -1.0, -1.0, -0.7, -0.2, 0.25, 0.7, 1.0};
 float insolationFactor = 0.4; // varies minsPerDegreePerHour from 0.4 to 1.2, winter to summer
@@ -50,7 +51,7 @@ bool Heating::switchHeating() {
   if (serviceOn > 0 && serviceOn < millis()) serviceOn = 0;
   bool shouldBeOn =
     !serviceOff && (serviceOn > 0 ||
-                    rtc.getMinutes() < periodThisHour);
+                    rtc.getMinutes() < periodThisHour) && temperatures.getRecentAverage() < targetTemp;
   if (shouldBeOn != isHeatingOn) {
     digitalWrite(HEAT_PIN, (shouldBeOn ? HIGH : LOW));
     isHeatingOn = shouldBeOn;
@@ -125,11 +126,11 @@ void Temperatures:: record() {
     clog("~");
     previousRecord = millis();
     if (periodCount > 0) {
-      float avgTempOverPeriod = round(10 * sumOverPeriod / periodCount) / 10;
+      recentAverage = round(10 * sumOverPeriod / periodCount) / 10;
       File f = SD.open("TEMPERAT.TXT", FILE_WRITE);
       if (f) {
-        clogn(String("Temp ") + avgTempOverPeriod);
-        f.println(timeString() + "\t\t" + (heating.isHeatingOn ? 1 : 0) + "\t" + avgTempOverPeriod);
+        clogn(String("Temp ") + recentAverage);
+        f.println(timeString() + "\t\t" + (heating.isHeatingOn ? 1 : 0) + "\t" + recentAverage);
         f.close();
       }
       periodCount = 0;

@@ -33,7 +33,11 @@ class Temperatures {
     long previousRecord = 10000;
     float sumOverPeriod = 0;
     long int periodCount = 0;
+    float recentAverage = 20.0;
   public:
+    float getRecentAverage() {
+      return recentAverage;
+    }
     float getCurrent() {
       int v = analogRead(THERMISTOR);
       return (v - 250) / 10.4;
