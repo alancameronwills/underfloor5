@@ -16,8 +16,15 @@ const char *htmlTemplate = R"delimiter(
       font-family: sans-serif;
     }
 
-    tr {
-      vertical-align: center;
+    .main {
+      margin: 20px;
+      padding: 20px;
+      border: 2px solid darkred;
+      max-width: 580px;
+    }
+
+    .label {
+      margin: 10px 0;
     }
 
     input {
@@ -27,6 +34,13 @@ const char *htmlTemplate = R"delimiter(
       border: 0pt;
       text-align: right;
       width: 150pt;
+    }
+    .tempboxes {
+      display: flex;
+      flex-wrap: wrap;
+    }
+    .tempboxes>div {
+      width: 250px;
     }
 
     .temperature {
@@ -45,14 +59,28 @@ const char *htmlTemplate = R"delimiter(
       font-weight: bold;
       vertical-align:baseline;
     }
-
+    #targetBox {
+      background-color: rgb(10,160,80);
+    }
+    #currentBox {
+      background-color: rgb(0,168,168);
+    }
+    .vacateBox {
+      background-color: rgb(10,160,80);
+      border: 1px solid yellow;
+      border-radius: 4px;
+      padding: 6px;
+      margin: 10px;
+      width: 250px;
+    }
     #vacation {
       font-size: 18pt;
-      border: 1px solid blue;
     }
-    #vacateLabel {
-      text-align: right;
+
+    .inputBox {
+      background-color: rgba(255,255,255,0.2);
     }
+    
 
     #submit {
       border: 2pt;
@@ -79,39 +107,49 @@ const char *htmlTemplate = R"delimiter(
 <body>
   <h1>Underfloor heating</h1>
   <h2 style="color:yellow">{%serviceState}</h2>
-  <table>
-    <tr>
-      <td title='Adjust the target temperature' class='temperature' id="targetBox">Target<br/>
-        <input type='number' id='target' name='target' value='{%target}' step='0.1' min='5.0' max='30.0' /><span
-            >C</span></td>
-      <td title='Current temperature' class='temperature' id="currentBox">Current<br/>
+  <div class="main">
+    <div class="tempboxes">
+      <div title='Adjust the target temperature' class='temperature' id="targetBox">
+      <div class="label">Target</div>
+        <input class='inputBox' type='number' id='target' name='target' value='{%target}' step='0.1' min='5.0' max='30.0' /><span
+            >C</span></div>
+      <div title='Current temperature' class='temperature' id="currentBox">
+      <div class="label">Current</div>
         <input type='number' id='current' name='current'  value='{%current}' readonly /><span
-          >C</span></td>
+          >C</span></div>
 
 
-    </tr>
-    <tr style="display:none">
+    </div>
+    <div style="display:none">
       <td title='Adjust this over many days until the temperature is correct. Then leave it be.'>Factor</td>
       <td><input type='number' id='factor' name='factor' min='0.5' step='0.01' max='1.2' value='{%factor}' /></td>
-    </tr>
-    <tr>
-      <td id="vacateLabel" title='Heating will be minimal until this date. For normal operation, clear it or set to a past date.'>
-        Vacate until</td>
-      <td><input type='date' min='2018-01-01' id='vacation' name='vacation'
+    </div>
+    <div class="vacateBox">
+      <div id="vacateLabel" class="label" title='Heating will be minimal until this date. For normal operation, clear it or set to a past date.'>
+        Vacate until</div>
+      <div><input class='inputBox' type='date' min='2018-01-01' id='vacation' name='vacation'
           value='{%vacation}' />&nbsp;&nbsp;<span id='clear' title="Turn off vacation"
-          onClick="clearDate()">X</span></td>
-    </tr>
-    <tr>
-      <td>&nbsp;</td>
-    </tr>
-    <tr>
-      <td></td>
-      <td style="text-align: right;"><input id='submit' type='button' value='Update' onClick='sendUpdate()' /></td>
-    </tr>
-  </table> <!-- <input type='text' onChange="g('ans').innerHTML=p(this.value);"/><span id='ans'></span> -->
-  <hr /> <a href="/upd">More parameters</a> &nbsp;&nbsp;<a href="/log">Log</a>&nbsp;&nbsp;Service: <a
-    href="/service?set=on">ON</a> <a href="/service?set=off">OFF</a> <a href="/service?set=run">Normal</a>
+          onClick="clearDate()">X</span></div>
+    </div>
+    <div>
+      <p>&nbsp;</p>
+    </div>
+    <div>
+      <div style="text-align: right;max-width:560px;"><input id='submit' type='button' value='Update' onClick='sendUpdate()' /></div>
+    </div>
+  </div> <!-- <input type='text' onChange="g('ans').innerHTML=p(this.value);"/><span id='ans'></span> -->
+  <div class="main"> <div class="label">Service:</div>
+  <div><button onclick="location='/service?set=on'">ON</button> 
+  <button onclick="location='/service?set=off'">OFF</button> 
+  <button onclick="location='/service?set=run'">Normal</button>
   <p>&nbsp;</p>
+  </div>
+  </div>
+  <hr />
+  <div><a href="/upd">More parameters</a> 
+  &nbsp;&nbsp;<a href="/log">Log</a>
+  &nbsp;&nbsp;<a href="/temps">Temperatures</a>
+  </div>
   <div style="display:none">
     <form id='dataForm' method='POST' action='/'><textarea id='data' name='data'>{%params}</textarea></form>
   </div>
