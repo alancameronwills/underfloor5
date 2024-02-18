@@ -19,6 +19,8 @@ extern RTCZero rtc;
 
 extern float targetTemp;
 
+void doItNow();
+
 /*__Pin definitions for the TFT display */
 #define TFT_CS   A3
 #define TFT_DC   0
@@ -116,16 +118,21 @@ void show(int x, int y, String text)
   tft.print(text);
 }
 
-
-void Page::drawNumberButton(float num, int y, unsigned int bg, unsigned int fg)
+void Page::drawButton(String txt, int x, int y, int w, int h, unsigned int bg, unsigned int fg)
 {
-  tft.fillRoundRect(240, y, 80, 60, 4, bg);
+  tft.fillRoundRect(x, y, w, h, 4, bg);
   tft.setTextSize(2);
   tft.setTextColor(fg);
   tft.setFont(&FreeSansBold9pt7b);
-  float t = round(10 * num) / 10.0 + 0.00001;
-  show(245, y + 40, (String("") + t).substring(0, 4));
+  show(x+5, y + 40, txt);
   tft.setFont(NULL);
+}
+
+void Page::drawNumberButton(float num, int y, unsigned int bg, unsigned int fg)
+{
+  float t = round(10 * num) / 10.0 + 0.00001;
+  String txt = (String("") + t).substring(0, 4);
+  drawButton(txt, 240, y, 80, 60, bg, fg);
 }
 
 
@@ -390,18 +397,32 @@ void ControlPage::handleTouch(TS_Point touch) {
   if (touch.x > 200) {
     screen->switchToMainPage();
   }
-  else {
+  else if (touch.x > 100) {
     if (touch.y < 120) targetTemp += 0.5;
     else targetTemp -= 0.5;
     this->refresh();
     screen->setTimeout(20000);
+  } else {
+    if (touch.y < 120) {
+      // set service on or cancel service off; go to main screen
+      if (heating.serviceOff) heating.serviceOff = false;
+      else heating.serviceOn = millis() + 30 * 60 * 1000;
+    } else {
+      // set service off or cancel service on; go to main 
+      if (heating.serviceOn > 0) heating.serviceOn = 0;
+      else heating.serviceOff = true;
+    }
+    doItNow();
+    screen->switchToMainPage();
   }
 }
 void ControlPage::redraw() {
   tft.fillScreen(rgb(255, 255, 0));
   drawNumberButton(targetTemp, 50, rgb(0, 0, 128), rgb(0, 192, 192));
-  tft.fillTriangle(100, 20, 170, 100, 30, 100, rgb(255, 192, 192));
-  tft.fillTriangle(100, 220, 170, 140, 30, 140, rgb(192, 255, 255));
+  tft.fillTriangle(140, 20, 170, 100, 110, 100, rgb(255, 192, 192));
+  tft.fillTriangle(140, 220, 170, 140, 110, 140, rgb(192, 255, 255));
+  drawButton("ON", 20,20,70,70, rgb(0,255,0),rgb(255,255,255));
+  drawButton("OFF", 20,110,70,70, rgb(0,255,0),rgb(255,255,255));
 }
 void ControlPage::refresh() {
   drawNumberButton(targetTemp, 50, rgb(0, 0, 128), rgb(0, 192, 192));

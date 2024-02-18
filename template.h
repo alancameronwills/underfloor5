@@ -27,6 +27,12 @@ const char *htmlTemplate = R"delimiter(
       margin: 10px 0;
     }
 
+    input[type=button],
+    button {
+      width : 100px;
+      height: 30px;
+    }
+
     input {
       color: white;
       font-weight: bold;

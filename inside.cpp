@@ -51,7 +51,7 @@ bool Heating::switchHeating() {
   if (serviceOn > 0 && serviceOn < millis()) serviceOn = 0;
   bool shouldBeOn =
     !serviceOff && (serviceOn > 0 ||
-                    rtc.getMinutes() < periodThisHour) && temperatures.getRecentAverage() < targetTemp;
+                    (rtc.getMinutes() < periodThisHour && temperatures.getRecentAverage() < targetTemp));
   if (shouldBeOn != isHeatingOn) {
     digitalWrite(HEAT_PIN, (shouldBeOn ? HIGH : LOW));
     isHeatingOn = shouldBeOn;

@@ -22,7 +22,7 @@ class Page {
   protected:
     PageController *screen;
     void drawNumberButton(float num, int y, unsigned int bg, unsigned int fg);
-
+    void drawButton(String txt, int x, int y, int w, int h, unsigned int bg, unsigned int fg);
     void drawStatus ();
     unsigned rgb(byte r, byte g, byte b);
   public:
