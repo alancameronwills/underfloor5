@@ -1,3 +1,7 @@
+#include <ctime>
+#include <iomanip>
+#include <iostream>
+#include <sstream>
 #include "utility.h"
 #include <RTCZero.h>    // clock
 
@@ -6,6 +10,12 @@ extern RTCZero rtc;
 String dayNames [] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 String dayName(int i) {
   return dayNames[i];
+}
+
+String utc (long int seconds)
+{
+  time_t epoch = seconds;
+  return asctime(gmtime(&epoch));
 }
 
 int months [] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365};

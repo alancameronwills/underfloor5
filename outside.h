@@ -124,4 +124,18 @@ class Weather : public WebResponseHandler {
     bool useWeatherAsync(void (*_gotWeather)(Weather*));
 };
 
+class HourlyArrayGetter {
+  arduino::String& str;
+  int ix = 0;
+  int endix = 0;
+  public:
+    HourlyArrayGetter(arduino::String& msg, int msgix, String name);
+    arduino::String next();
+    double nextAverageOf(int n);
+    double nextMaxOf(int n);
+    double nextMinOf(int n);
+    double dominant360(int n);
+    void moveOn(int n);
+};
+
 #endif

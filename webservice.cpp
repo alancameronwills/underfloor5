@@ -118,11 +118,12 @@ int unhex(char c) {
   return c < 'A' ? c - '0' : c - 'A' + 10;
 }
 
-
+/** Max string length 1000 */
 void decode(String &m) {
-  char b[m.length() + 1];
+  const int bufsize = m.length()+1;
+  char *b = new char[bufsize];
   int mi = 0;
-  for (int i = 0; i < m.length(); ) {
+  for (int i = 0; i < max(m.length(),bufsize); ) {
     if (i < m.length() - 2 && m[i] == '%') {
       char c = (char)(unhex(m[i + 1]) * 16 + unhex(m[i + 2]));
       b[mi++] = c;
@@ -139,7 +140,7 @@ void decode(String &m) {
 }
 
 /**
-   Use for short content blocks. Anything too big busts the variable memory.
+   Use for short content blocks < 1000. Anything too big busts the variable memory.
 */
 void getContentFromClient(WiFiClient &client, int lengthExpected, String &content) {
   int count = 0;

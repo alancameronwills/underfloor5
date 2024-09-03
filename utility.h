@@ -10,7 +10,7 @@ int dayIndex(String date);
 String day (String date);
 bool isSummertime();
 long rtcSeconds();
-
+String utc (long int seconds);
 
 String getProp (String &msg, String prop, int msgix, int endSegmentIx);
 
